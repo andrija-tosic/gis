@@ -1,12 +1,32 @@
 @import "node_modules/ol/ol.css";
 
-html, body {
+html,
+body {
   margin: 0;
   height: 100%;
+  font-family: sans-serif;
 }
+
 #map {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 100%;
+}
+
+#info {
+  position: absolute;
+  display: inline-block;
+  height: auto;
+  width: auto;
+  z-index: 100;
+  background-color: #fff;
+  color: #000;
+  text-align: center;
+  border-radius: 4px;
+  padding: 5px;
+  left: 50%;
+  transform: translateY(-150%);
+  visibility: hidden;
+  pointer-events: none;
 }
