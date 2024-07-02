@@ -20,7 +20,7 @@ import Style from "ol/style/Style";
 import Stroke from "ol/style/Stroke";
 import Fill from "ol/style/Fill";
 import CircleStyle from "ol/style/Circle";
-import { WORKSPACE, sumoLayers } from "../lib/src/constants";
+import { WORKSPACE, parametrizedLayers } from "../lib/src/constants";
 
 const legend: HTMLElement = document.getElementById("legend")!!;
 const popup = new Overlay({
@@ -58,7 +58,7 @@ if (wfsLayers?.length > 0) {
   legend.appendChild(wmsHeader);
 }
 
-wmsLayers?.filter((l) => !sumoLayers.has(l.name)).forEach(initLayer);
+wmsLayers?.filter((l) => !parametrizedLayers.has(l.name)).forEach(initLayer);
 
 if (wfsLayers?.length > 0) {
   const wfsHeader = document.createElement("H4");
@@ -67,23 +67,18 @@ if (wfsLayers?.length > 0) {
 }
 
 wfsLayers
-  ?.filter((l) => !sumoLayers.has(l.name.replace(WORKSPACE + ":", "")))
+  ?.filter((l) => !parametrizedLayers.has(l.name.replace(`${WORKSPACE}:`, "")))
   .forEach(initLayer);
 
-// const wfsHeader = document.createElement("hr");
-// legend.appendChild(wfsHeader);
-
-// wfsLayers.forEach(initLayer);
-
-const offset = "2024-06-27 00:19:43.440427Z";
+const offset = "2024-06-27 00:19:43.440427";
 let timestamp = offset;
 let veh_type = "veh_passenger";
 
-const layerMostBusyStreet = createVectorLayer({
+const layerMostBusyStreet: LayerInfo = {
   name: "most_busy_street",
   params: { timestamp: timestamp, veh_type: "veh_passenger" },
   service: "WFS",
-  title: "Most busy street",
+  title: "Ulica sa najgušćim saobraćajem",
   keywords: [],
   style: new Style({
     stroke: new Stroke({
@@ -91,24 +86,28 @@ const layerMostBusyStreet = createVectorLayer({
       width: 15,
     }),
   }),
-});
+};
 
-const layerCarsOnMostBusyStreet = createVectorLayer({
+const layerCarsOnMostBusyStreet: LayerInfo = {
   name: "cars_on_most_busy_street",
   params: { timestamp: timestamp, veh_type: "veh_passenger" },
   service: "WFS",
-  title: "Cars on most busy street",
+  title: "Vozila na ulici sa najgušćim saobraćajem",
   keywords: [],
-});
+};
 
-map.addLayer(layerMostBusyStreet);
-map.addLayer(layerCarsOnMostBusyStreet);
+const vectorLayerMostBusyStreet = initLayer(
+  layerMostBusyStreet
+) as VectorLayer<any>;
+const vectorLayerCarsOnMostBusyStreet = initLayer(
+  layerCarsOnMostBusyStreet
+) as VectorLayer<any>;
 
-const layerTrafficLightJams = createVectorLayer({
+const layerTrafficLightJams: LayerInfo = {
   name: "traffic_light_jams",
   params: { timestamp: timestamp, veh_type: "veh_passenger" },
   service: "WFS",
-  title: "Traffic light jams",
+  title: "Kolone na semaforima",
   keywords: [],
   style: new Style({
     image: new CircleStyle({
@@ -117,39 +116,57 @@ const layerTrafficLightJams = createVectorLayer({
       stroke: new Stroke({ color: "#00ff00", width: 3 }),
     }),
   }),
-});
+};
 
-const layerCarsOnTrafficLightJams = createVectorLayer({
+const layerCarsOnTrafficLightJams: LayerInfo = {
   name: "cars_on_traffic_light_jams",
   params: { timestamp: timestamp, veh_type: "veh_passenger" },
   service: "WFS",
-  title: "Cars on traffic light jams",
+  title: "Kolona vozila na semaforima",
   keywords: [],
-});
+};
 
-map.addLayer(layerTrafficLightJams);
-map.addLayer(layerCarsOnTrafficLightJams);
+const vectorLayerTrafficLightJams = initLayer(
+  layerTrafficLightJams
+) as VectorLayer<any>;
+const vectorLayerCarsOnTrafficLightJams = initLayer(
+  layerCarsOnTrafficLightJams
+) as VectorLayer<any>;
 
 let surface = (document.querySelector("#surface-select") as HTMLInputElement)
   .value;
 
-const layerBikeLanes = createVectorLayer({
+const layerBikeLanes: LayerInfo = {
   name: "bike_lanes",
   params: { surface },
   service: "WFS",
-  title: "Cars on traffic light jams",
+  title: "Biciklističke staze",
   keywords: [],
-});
+};
 
-map.addLayer(layerBikeLanes);
+const vectorLayerBikeLanes = initLayer(
+  layerBikeLanes
+) as VectorLayer<any> as VectorLayer<any>;
+
+const layerFastestVehiclesAtTimestamp: LayerInfo = {
+  name: "fastest_vehicles_at_timestamp",
+  params: { timestamp, veh_type },
+  service: "WFS",
+  title: "Najbrža vozila u datom trenutku",
+  keywords: [],
+};
+
+const vectorLayerFastestVehiclesAtTimestamp = initLayer(
+  layerFastestVehiclesAtTimestamp
+);
 
 document.querySelector("#surface-select")?.addEventListener("change", () => {
   let surface = (document.querySelector("#surface-select") as HTMLInputElement)
     .value;
 
-  updateVectorLayerParams(layerBikeLanes, { surface });
+  updateVectorLayerParams(vectorLayerBikeLanes, { surface });
 
-  layerBikeLanes.getSource()?.refresh();
+  vectorLayerBikeLanes.getSource()?.refresh();
 });
 
 document.querySelectorAll("#time-slider, #type-select")!.forEach((el) =>
@@ -158,7 +175,9 @@ document.querySelectorAll("#time-slider, #type-select")!.forEach((el) =>
       document.querySelector("#time-slider") as HTMLInputElement
     ).value;
 
-    timestamp = new Date(new Date(offset).getTime() + +sliderValue * 60 * 1000)
+    timestamp = new Date(
+      new Date(offset + "Z").getTime() + +sliderValue * 60 * 1000
+    )
       .toISOString()
       .replace("T", " ")
       .replace("Z", "");
@@ -168,10 +187,16 @@ document.querySelectorAll("#time-slider, #type-select")!.forEach((el) =>
 
     if (veh_type === "person") veh_type = "NULL";
 
-    updateVectorLayerParams(layerMostBusyStreet, { timestamp, veh_type });
-    updateVectorLayerParams(layerCarsOnMostBusyStreet, { timestamp, veh_type });
-    updateVectorLayerParams(layerTrafficLightJams, { timestamp, veh_type });
-    updateVectorLayerParams(layerCarsOnTrafficLightJams, {
+    updateVectorLayerParams(vectorLayerMostBusyStreet, { timestamp, veh_type });
+    updateVectorLayerParams(vectorLayerCarsOnMostBusyStreet, {
+      timestamp,
+      veh_type,
+    });
+    updateVectorLayerParams(vectorLayerTrafficLightJams, {
+      timestamp,
+      veh_type,
+    });
+    updateVectorLayerParams(vectorLayerCarsOnTrafficLightJams, {
       timestamp,
       veh_type,
     });
@@ -203,8 +228,9 @@ map.on("singleclick", async (evt) => {
     return;
   }
 
-  const props =
-    feature instanceof Feature ? feature.getProperties() : feature.properties;
+  const props = feature.getProperties
+    ? feature.getProperties()
+    : feature.properties;
 
   displayDetailsPopUp(evt.coordinate, props);
 });
@@ -258,6 +284,8 @@ function initLayer(layerInfo: LayerInfo) {
   item.appendChild(checkbox);
   item.appendChild(document.createTextNode(layerInfo.title));
   legend.appendChild(item);
+
+  return layer;
 }
 
 function displayDetailsPopUp(coordinate: Coordinate, props: any) {
