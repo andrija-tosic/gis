@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/x-icon" href="https://openlayers.org/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GIS Projekat 3</title>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id="legend">
+        <div>
+            Timestamp
+            <input type="range" min="0" max="168" value="90" id="time-slider"
+                oninput="this.nextElementSibling.value = '+' + this.value + ':00'">
+            <output>+90:00</output>
+        </div>
+
+        <div>
+            Vrsta vozila
+            <select id="type-select">
+                <option value="veh_passenger">Putničko vozilo</option>
+                <option value="bus_bus">Autobus</option>
+                <option value="bike_bicycle">Bicikl</option>
+                <option value="tram_tram">Tramvaj</option>
+                <option value="person">Pešak</option>
+            </select>
+        </div>
+
+        <div>
+            Podloga biciklističke staze
+            <select id="surface-select">
+                <option value="asphalt">Asfalt</option>
+                <option value="concrete">Beton</option>
+                <option value="dirt">Zemlja</option>
+                <option value="grass">Trava</option>
+                <option value="gravel">Šljunak</option>
+            </select>
+        </div>
+    </div>
+    <div id="popup" class="ol-popup">
+        <div id="popup-content"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+</body>
+
+</html>
