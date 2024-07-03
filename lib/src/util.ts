@@ -7,6 +7,8 @@ import { bbox as bboxStrategy } from "ol/loadingstrategy";
 import { WMSCapabilities } from "ol/format";
 import { GEOSERVER_URI, WORKSPACE } from "./constants";
 import { LayerInfo } from "./types";
+import { Pixel } from "ol/pixel";
+import { Map } from "ol";
 
 export async function getWFSLayersInfo(): Promise<LayerInfo[]> {
   const response = await fetch(
@@ -18,8 +20,6 @@ export async function getWFSLayersInfo(): Promise<LayerInfo[]> {
   const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
   const featureElements = xmlDoc.getElementsByTagName("FeatureType");
-  //@ts-ignore
-  console.log(xmlDoc);
   //@ts-ignore
   return Array.from(featureElements).map((featureElement) => {
     const name = featureElement.getElementsByTagName("Name")[0].textContent;
@@ -165,4 +165,32 @@ export function sanitizeValue(key: string, value: string | number): string {
 
 export function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+export async function getFirstFeatureFromTileLayer(
+  map: Map,
+  layer: TileLayer<any>,
+  pixel: Pixel
+) {
+  const viewResolution = map.getView().getResolution();
+
+  if (!viewResolution) return null;
+
+  const url = layer
+    ?.getSource()
+    ?.getFeatureInfoUrl(pixel, viewResolution, "EPSG:3857", {
+      INFO_FORMAT: "application/json",
+    });
+
+  if (!url) return null;
+
+  const response = await fetch(url);
+  const features = (await response.json()).features;
+
+  return features.length > 0 ? features[0] : null;
+}
+
+export function getFirstFeatureFromVectorLayer(map: Map, pixel: Pixel) {
+  const features = map.getFeaturesAtPixel(pixel);
+  return features.length ? features[0] : null;
 }

@@ -8,13 +8,16 @@ import OSM from "ol/source/OSM";
 import {
   createTileLayer,
   createVectorLayer,
+  getFirstFeatureFromTileLayer,
+  getFirstFeatureFromVectorLayer,
   getWFSLayersInfo,
   getWMSLayersInfo,
+  sanitize,
+  sanitizeValue,
   updateVectorLayerParams,
 } from "../lib/src/util";
 import "./style.css";
 import { Pixel } from "ol/pixel";
-import Feature from "ol/Feature";
 import { LayerInfo } from "../lib/src/types";
 import Style from "ol/style/Style";
 import Stroke from "ol/style/Stroke";
@@ -54,7 +57,7 @@ const wfsLayers =
 
 if (wfsLayers?.length > 0) {
   const wmsHeader = document.createElement("H4");
-  wmsHeader.textContent = "WMS Layers";
+  wmsHeader.textContent = "WMS slojevi";
   legend.appendChild(wmsHeader);
 }
 
@@ -62,7 +65,7 @@ wmsLayers?.filter((l) => !parametrizedLayers.has(l.name)).forEach(initLayer);
 
 if (wfsLayers?.length > 0) {
   const wfsHeader = document.createElement("H4");
-  wfsHeader.textContent = "WFS Layers";
+  wfsHeader.textContent = "WFS slojevi";
   legend.appendChild(wfsHeader);
 }
 
@@ -74,9 +77,9 @@ const offset = "2024-06-27 00:19:43.440427";
 let timestamp = offset;
 let veh_type = "veh_passenger";
 
-const layerMostBusyStreet: LayerInfo = {
+const vectorLayerMostBusyStreet = initLayer({
   name: "most_busy_street",
-  params: { timestamp: timestamp, veh_type: "veh_passenger" },
+  params: { timestamp, veh_type },
   service: "WFS",
   title: "Ulica sa najgušćim saobraćajem",
   keywords: [],
@@ -86,28 +89,21 @@ const layerMostBusyStreet: LayerInfo = {
       width: 15,
     }),
   }),
-};
+}) as VectorLayer<any>;
 
-const layerCarsOnMostBusyStreet: LayerInfo = {
+const vectorLayerCarsOnMostBusyStreet = initLayer({
   name: "cars_on_most_busy_street",
-  params: { timestamp: timestamp, veh_type: "veh_passenger" },
+  params: { timestamp, veh_type },
   service: "WFS",
   title: "Vozila na ulici sa najgušćim saobraćajem",
   keywords: [],
-};
+}) as VectorLayer<any>;
 
-const vectorLayerMostBusyStreet = initLayer(
-  layerMostBusyStreet
-) as VectorLayer<any>;
-const vectorLayerCarsOnMostBusyStreet = initLayer(
-  layerCarsOnMostBusyStreet
-) as VectorLayer<any>;
-
-const layerTrafficLightJams: LayerInfo = {
+const vectorLayerTrafficLightJams = initLayer({
   name: "traffic_light_jams",
-  params: { timestamp: timestamp, veh_type: "veh_passenger" },
+  params: { timestamp, veh_type },
   service: "WFS",
-  title: "Kolone na semaforima",
+  title: "Semafori sa kolonama vozila",
   keywords: [],
   style: new Style({
     image: new CircleStyle({
@@ -116,57 +112,40 @@ const layerTrafficLightJams: LayerInfo = {
       stroke: new Stroke({ color: "#00ff00", width: 3 }),
     }),
   }),
-};
+}) as VectorLayer<any>;
 
-const layerCarsOnTrafficLightJams: LayerInfo = {
+const vectorLayerCarsOnTrafficLightJams = initLayer({
   name: "cars_on_traffic_light_jams",
-  params: { timestamp: timestamp, veh_type: "veh_passenger" },
+  params: { timestamp, veh_type },
   service: "WFS",
   title: "Kolona vozila na semaforima",
   keywords: [],
-};
-
-const vectorLayerTrafficLightJams = initLayer(
-  layerTrafficLightJams
-) as VectorLayer<any>;
-const vectorLayerCarsOnTrafficLightJams = initLayer(
-  layerCarsOnTrafficLightJams
-) as VectorLayer<any>;
+}) as VectorLayer<any>;
 
 let surface = (document.querySelector("#surface-select") as HTMLInputElement)
   .value;
 
-const layerBikeLanes: LayerInfo = {
+const vectorLayerBikeLanes = initLayer({
   name: "bike_lanes",
   params: { surface },
   service: "WFS",
   title: "Biciklističke staze",
   keywords: [],
-};
+}) as VectorLayer<any>;
 
-const vectorLayerBikeLanes = initLayer(
-  layerBikeLanes
-) as VectorLayer<any> as VectorLayer<any>;
-
-const layerFastestVehiclesAtTimestamp: LayerInfo = {
+const vectorLayerFastestVehiclesAtTimestamp = initLayer({
   name: "fastest_vehicles_at_timestamp",
   params: { timestamp, veh_type },
   service: "WFS",
-  title: "Najbrža vozila u datom trenutku",
+  title: "Najbrža vozila",
   keywords: [],
-};
-
-const vectorLayerFastestVehiclesAtTimestamp = initLayer(
-  layerFastestVehiclesAtTimestamp
-);
+}) as VectorLayer<any>;
 
 document.querySelector("#surface-select")?.addEventListener("change", () => {
   let surface = (document.querySelector("#surface-select") as HTMLInputElement)
     .value;
 
   updateVectorLayerParams(vectorLayerBikeLanes, { surface });
-
-  vectorLayerBikeLanes.getSource()?.refresh();
 });
 
 document.querySelectorAll("#time-slider, #type-select")!.forEach((el) =>
@@ -200,6 +179,10 @@ document.querySelectorAll("#time-slider, #type-select")!.forEach((el) =>
       timestamp,
       veh_type,
     });
+    updateVectorLayerParams(vectorLayerFastestVehiclesAtTimestamp, {
+      timestamp,
+      veh_type,
+    });
   })
 );
 
@@ -211,11 +194,9 @@ map.on("singleclick", async (evt) => {
     .toReversed()
     .map((layer) => {
       if (layer instanceof VectorLayer) {
-        return Promise.resolve(
-          getFirstFeatureFromVectorLayer(layer, evt.pixel)
-        );
+        return Promise.resolve(getFirstFeatureFromVectorLayer(map, evt.pixel));
       } else if (layer instanceof TileLayer) {
-        return getFirstFeatureFromTileLayer(layer, evt.coordinate);
+        return getFirstFeatureFromTileLayer(map, layer, evt.coordinate);
       } else {
         return Promise.resolve(null);
       }
@@ -228,39 +209,10 @@ map.on("singleclick", async (evt) => {
     return;
   }
 
-  const props = feature.getProperties
-    ? feature.getProperties()
-    : feature.properties;
+  const props = feature.getProperties() ?? feature.properties;
 
   displayDetailsPopUp(evt.coordinate, props);
 });
-
-function getFirstFeatureFromVectorLayer(layer: VectorLayer<any>, pixel: Pixel) {
-  const features = map.getFeaturesAtPixel(pixel);
-  return features.length ? features[0] : null;
-}
-
-async function getFirstFeatureFromTileLayer(
-  layer: TileLayer<any>,
-  pixel: Pixel
-) {
-  const viewResolution = map.getView().getResolution();
-
-  if (!viewResolution) return null;
-
-  const url = layer
-    ?.getSource()
-    ?.getFeatureInfoUrl(pixel, viewResolution, "EPSG:3857", {
-      INFO_FORMAT: "application/json",
-    });
-
-  if (!url) return null;
-
-  const response = await fetch(url);
-  const features = (await response.json()).features;
-
-  return features.length > 0 ? features[0] : null;
-}
 
 function initLayer(layerInfo: LayerInfo) {
   const item = document.createElement("div");
@@ -299,40 +251,10 @@ function displayDetailsPopUp(coordinate: Coordinate, props: any) {
       continue;
     }
 
-    info = info.concat(`${sanitaze(key)}: ${sanitazeValue(key, value)}<br>`);
+    info = info.concat(`${sanitize(key)}: ${sanitizeValue(key, value)}<br>`);
   }
 
-  const popupContent = document.getElementById("popup-content");
-  if (popupContent) {
-    popupContent.innerHTML = info;
-  }
+  document.getElementById("popup-content")!.innerHTML = info;
 
   popup.setPosition(coordinate);
-}
-
-function sanitaze(key: string): string {
-  return capitalize(key.replace(/[:_]/g, " "));
-}
-
-function sanitazeValue(key: string, value: string | number): string {
-  if (typeof value === "string" && key !== "ele") {
-    return sanitaze(value);
-  }
-
-  const numberValue = value as number;
-
-  const searchableKey = key.toLocaleLowerCase();
-  if (searchableKey.indexOf("area") >= 0) {
-    return numberValue < 1000000
-      ? `${numberValue} m²`
-      : `${(numberValue / 1000000).toFixed(2)} km²`;
-  } else if (searchableKey.indexOf("ele") >= 0) {
-    return `${numberValue} m`;
-  }
-
-  return value.toString();
-}
-
-function capitalize(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

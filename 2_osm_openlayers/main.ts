@@ -1,6 +1,5 @@
 import { Map, Overlay, View } from "ol";
 import { Coordinate } from "ol/coordinate";
-import Layer from "ol/layer/Layer";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import { fromLonLat } from "ol/proj";
@@ -8,15 +7,16 @@ import OSM from "ol/source/OSM";
 import {
   createTileLayer,
   createVectorLayer,
+  getFirstFeatureFromTileLayer,
+  getFirstFeatureFromVectorLayer,
   getWFSLayersInfo,
   getWMSLayersInfo,
   sanitize as sanitize,
   sanitizeValue as sanitizeValue,
 } from "../lib/src/util";
 import "./style.css";
-import { Pixel } from "ol/pixel";
 import Feature from "ol/Feature";
-import { WORKSPACE, sumoLayers } from "../lib/src/constants";
+import { WORKSPACE, parametrizedLayers } from "../lib/src/constants";
 import { LayerInfo } from "../lib/src/types";
 import BaseLayer from "ol/layer/Base";
 
@@ -48,26 +48,21 @@ const wfsLayers = (await getWFSLayersInfo()) ?? [];
 
 if (wfsLayers?.length > 0) {
   const wmsHeader = document.createElement("H4");
-  wmsHeader.textContent = "WMS Layers";
+  wmsHeader.textContent = "WMS slojevi";
   legend.appendChild(wmsHeader);
 }
 
-wmsLayers?.filter((l) => !sumoLayers.has(l.name)).forEach(initLayer);
+wmsLayers?.filter((l) => !parametrizedLayers.has(l.name)).forEach(initLayer);
 
 if (wfsLayers?.length > 0) {
   const wfsHeader = document.createElement("H4");
-  wfsHeader.textContent = "WFS Layers";
+  wfsHeader.textContent = "WFS slojevi";
   legend.appendChild(wfsHeader);
 }
 
 wfsLayers
-  ?.filter((l) => !sumoLayers.has(l.name.replace(WORKSPACE + ":", "")))
+  ?.filter((l) => !parametrizedLayers.has(l.name.replace(WORKSPACE + ":", "")))
   .forEach(initLayer);
-
-// const wfsHeader = document.createElement("hr");
-// legend.appendChild(wfsHeader);
-
-// wfsLayers.forEach(initLayer);
 
 map.on("singleclick", async (evt) => {
   const featurePromises = map
@@ -77,11 +72,9 @@ map.on("singleclick", async (evt) => {
     .toReversed()
     .map((layer) => {
       if (layer instanceof VectorLayer) {
-        return Promise.resolve(
-          getFirstFeatureFromVectorLayer(layer, evt.pixel)
-        );
+        return Promise.resolve(getFirstFeatureFromVectorLayer(map, evt.pixel));
       } else if (layer instanceof TileLayer) {
-        return getFirstFeatureFromTileLayer(layer, evt.coordinate);
+        return getFirstFeatureFromTileLayer(map, layer, evt.coordinate);
       } else {
         return Promise.resolve(null);
       }
@@ -94,38 +87,10 @@ map.on("singleclick", async (evt) => {
     return;
   }
 
-  const props =
-    feature instanceof Feature ? feature.getProperties() : feature.properties;
+  const props = feature.getProperties() ?? feature.properties;
 
   displayDetailsPopUp(evt.coordinate, props);
 });
-
-function getFirstFeatureFromVectorLayer(layer: VectorLayer<any>, pixel: Pixel) {
-  const features = map.getFeaturesAtPixel(pixel);
-  return features.length ? features[0] : null;
-}
-
-async function getFirstFeatureFromTileLayer(
-  layer: TileLayer<any>,
-  pixel: Pixel
-) {
-  const viewResolution = map.getView().getResolution();
-
-  if (!viewResolution) return null;
-
-  const url = layer
-    ?.getSource()
-    ?.getFeatureInfoUrl(pixel, viewResolution, "EPSG:3857", {
-      INFO_FORMAT: "application/json",
-    });
-
-  if (!url) return null;
-
-  const response = await fetch(url);
-  const features = (await response.json()).features;
-
-  return features.length > 0 ? features[0] : null;
-}
 
 function initLayer(layerInfo: LayerInfo) {
   const item = document.createElement("div");
@@ -165,10 +130,7 @@ function displayDetailsPopUp(coordinate: Coordinate, props: any) {
     info = info.concat(`${sanitize(key)}: ${sanitizeValue(key, value)}<br>`);
   }
 
-  const popupContent = document.getElementById("popup-content");
-  if (popupContent) {
-    popupContent.innerHTML = info;
-  }
+  document.getElementById("popup-content")!.innerHTML = info;
 
   popup.setPosition(coordinate);
 }
