@@ -93,7 +93,7 @@ for (event, timestep) in context:
         obj_lon = float(obj.attrib['x'])
         obj_angle = float(obj.attrib['angle'])
         obj_speed = float(obj.attrib['speed'])
-        veh_type = obj.attrib.get('type', None)
+        veh_type = obj.attrib.get('type', 'person')
         
         veh_lane = None
         if 'lane' in obj.attrib and re.search(r'^-?\d+', obj.attrib['lane']):

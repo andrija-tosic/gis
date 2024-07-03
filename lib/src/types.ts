@@ -1,3 +1,4 @@
+import { FeatureLike } from "ol/Feature";
 import Style from "ol/style/Style";
 
 export type LayerInfo = {
@@ -6,5 +7,5 @@ export type LayerInfo = {
   keywords: string[];
   service: "WMS" | "WFS";
   params: Record<string, any>;
-  style?: Style;
+  style?: (feature: FeatureLike) => Style;
 };

@@ -9,6 +9,9 @@ import { GEOSERVER_URI, WORKSPACE } from "./constants";
 import { LayerInfo } from "./types";
 import { Pixel } from "ol/pixel";
 import { Map } from "ol";
+import Style from "ol/style/Style";
+import Icon from "ol/style/Icon";
+import { FeatureLike } from "ol/Feature";
 
 export async function getWFSLayersInfo(): Promise<LayerInfo[]> {
   const response = await fetch(
@@ -81,7 +84,6 @@ export function createVectorLayer(layer: LayerInfo): VectorLayer<any> {
       strategy: bboxStrategy,
     }),
     style: layer.style,
-    // style: style,
   });
   Object.entries(layer).forEach(([k, v]) => vl.set(k, v));
 
@@ -113,9 +115,10 @@ export function createTileLayer(layer: LayerInfo): TileLayer<TileWMS> {
   return tl;
 }
 
-export function updateVectorLayerParams(
+export function updateVectorLayer(
   layer: VectorLayer<any>,
-  params: Record<string, any>
+  params: Record<string, any>,
+  style: (feature: FeatureLike) => Style
 ) {
   const viewParams = `&viewparams=${Object.entries(params)
     .map(([k, v]) => `${k}:${v}`)
@@ -137,6 +140,7 @@ export function updateVectorLayerParams(
         "&srsname=EPSG:3857" +
         `&bbox=${extent.join(",")},EPSG:3857`
     );
+  layer.setStyle(style);
   layer.getSource()?.refresh();
 }
 
@@ -193,4 +197,16 @@ export async function getFirstFeatureFromTileLayer(
 export function getFirstFeatureFromVectorLayer(map: Map, pixel: Pixel) {
   const features = map.getFeaturesAtPixel(pixel);
   return features.length ? features[0] : null;
+}
+
+export function createIconStyle(fileName: string) {
+  return (feature: FeatureLike) =>
+    new Style({
+      image: new Icon({
+        anchor: [0.5, 1],
+        src: `./assets/${fileName}.png`,
+        scale: 0.1,
+        rotation: ((feature.get("angle") + 90) * Math.PI) / 180,
+      }),
+    });
 }
