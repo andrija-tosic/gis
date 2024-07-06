@@ -8,4 +8,6 @@ export const parametrizedLayers = new Set([
   "cars_on_traffic_light_jams",
   "fastest_vehicles_at_timestamp",
   "bike_lanes",
+  "object_trajectory",
+  "traffic_heatmap",
 ]);

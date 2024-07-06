@@ -1,4 +1,4 @@
-import { Map, Overlay, View } from "ol";
+import { Feature, Map, Overlay, View } from "ol";
 import { Coordinate } from "ol/coordinate";
 import Layer from "ol/layer/Layer";
 import TileLayer from "ol/layer/Tile";
@@ -19,16 +19,20 @@ import {
 } from "../lib/src/util";
 import "./style.css";
 import { LayerInfo } from "../lib/src/types";
-import Style from "ol/style/Style";
-import Stroke from "ol/style/Stroke";
-import Fill from "ol/style/Fill";
-import CircleStyle from "ol/style/Circle";
-import { WORKSPACE, parametrizedLayers } from "../lib/src/constants";
-import Icon from "ol/style/Icon";
+import { Style, Stroke, Text, Fill } from "ol/style";
+import {
+  GEOSERVER_URI,
+  WORKSPACE,
+  parametrizedLayers,
+} from "../lib/src/constants";
+import { LineString } from "ol/geom";
+import VectorSource from "ol/source/Vector";
+import GeoJSON from "ol/format/GeoJSON";
+import { bbox as bboxStrategy } from "ol/loadingstrategy";
+import Heatmap from "ol/layer/Heatmap";
 
-const legend: HTMLElement = document.getElementById("legend")!!;
-const sumoLegend: HTMLElement = document.getElementById("sumo")!!;
-const layersDiv: HTMLElement = document.getElementById("layers")!!;
+const sumoLegend: HTMLElement = document.getElementById("sumo")!;
+const layersDiv: HTMLElement = document.getElementById("layers")!;
 const popup = new Overlay({
   element: document.getElementById("popup") ?? undefined,
   autoPan: true,
@@ -47,6 +51,32 @@ const map = new Map({
   }),
   overlays: [popup],
 });
+
+const initLayer = (layerInfo: LayerInfo, parent?: HTMLElement) => {
+  const item = document.createElement("div");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = false;
+
+  let layer: Layer;
+  if (layerInfo.service == "WMS") {
+    layer = createTileLayer(layerInfo);
+  } else {
+    layer = createVectorLayer(layerInfo);
+  }
+  layer.setVisible(false);
+  map.addLayer(layer);
+
+  checkbox.addEventListener("change", (_) => {
+    layer.setVisible(checkbox.checked);
+    popup.setPosition(undefined);
+  });
+  item.appendChild(checkbox);
+  item.appendChild(document.createTextNode(layerInfo.title));
+  parent?.appendChild(item);
+
+  return layer;
+};
 
 const wmsLayers =
   (await getWMSLayersInfo())
@@ -78,25 +108,24 @@ wfsLayers
   ?.filter((l) => !parametrizedLayers.has(l.name.replace(`${WORKSPACE}:`, "")))
   .forEach((l) => initLayer(l, layersDiv));
 
-const offset = "2024-06-27 00:19:43.440427";
+const offset = "2024-07-04 09:11:12.000302";
 let timestamp = offset;
 let veh_type = "veh_passenger";
-let count = 1;
+let cnt = "1";
 
 const vectorLayerMostBusyStreet = initLayer(
   {
     name: "most_busy_street",
-    params: { timestamp, veh_type },
+    params: { timestamp, veh_type, cnt },
     service: "WFS",
     title: "Ulica sa najgušćim saobraćajem",
     keywords: [],
-    style: (feature) =>
-      new Style({
-        stroke: new Stroke({
-          color: "#42cdff",
-          width: 15,
-        }),
+    style: new Style({
+      stroke: new Stroke({
+        color: "#cc1836",
+        width: 15,
       }),
+    }),
   },
   sumoLegend
 ) as VectorLayer<any>;
@@ -104,10 +133,11 @@ const vectorLayerMostBusyStreet = initLayer(
 const vectorLayerCarsOnMostBusyStreet = initLayer(
   {
     name: "cars_on_most_busy_street",
-    params: { timestamp, veh_type, count },
+    params: { timestamp, veh_type, cnt },
     service: "WFS",
-    title: "Vozila na ulici sa najgušćim saobraćajem",
+    title: "Objekti na ulici sa najgušćim saobraćajem",
     keywords: [],
+    style: createIconStyle(veh_type),
   },
   sumoLegend
 ) as VectorLayer<any>;
@@ -115,18 +145,11 @@ const vectorLayerCarsOnMostBusyStreet = initLayer(
 const vectorLayerTrafficLightJams = initLayer(
   {
     name: "traffic_light_jams",
-    params: { timestamp, veh_type, count },
+    params: { timestamp, veh_type, cnt },
     service: "WFS",
-    title: "Semafori sa kolonama vozila",
+    title: "Semafori sa kolonama objekata",
     keywords: [],
-    style: (feature) =>
-      new Style({
-        image: new CircleStyle({
-          fill: new Fill({ color: "#ff0000" }),
-          radius: 10,
-          stroke: new Stroke({ color: "#00ff00", width: 3 }),
-        }),
-      }),
+    style: createIconStyle("traffic-light"),
   },
   sumoLegend
 ) as VectorLayer<any>;
@@ -134,9 +157,9 @@ const vectorLayerTrafficLightJams = initLayer(
 const vectorLayerCarsOnTrafficLightJams = initLayer(
   {
     name: "cars_on_traffic_light_jams",
-    params: { timestamp, veh_type, count },
+    params: { timestamp, veh_type },
     service: "WFS",
-    title: "Kolona vozila na semaforima",
+    title: "Kolona objekata na semaforima",
     keywords: [],
     style: createIconStyle(veh_type),
   },
@@ -146,6 +169,20 @@ const vectorLayerCarsOnTrafficLightJams = initLayer(
 let surface = (document.querySelector("#surface-select") as HTMLInputElement)
   .value;
 
+const bikeLanesVectorStyle = (surface: string) =>
+  new Style({
+    stroke: new Stroke({
+      color: {
+        ["asphalt"]: "#db9d00",
+        ["dirt"]: "#993000",
+        ["concrete"]: "#4f7b7d",
+        ["gravel"]: "##7c8e8f",
+        ["grass"]: "#13ab48",
+      }[surface],
+      width: 5,
+    }),
+  });
+
 const vectorLayerBikeLanes = initLayer(
   {
     name: "bike_lanes",
@@ -153,6 +190,7 @@ const vectorLayerBikeLanes = initLayer(
     service: "WFS",
     title: "Biciklističke staze",
     keywords: [],
+    style: bikeLanesVectorStyle(surface),
   },
   sumoLegend
 ) as VectorLayer<any>;
@@ -162,7 +200,7 @@ const vectorLayerFastestVehiclesAtTimestamp = initLayer(
     name: "fastest_vehicles_at_timestamp",
     params: { timestamp, veh_type },
     service: "WFS",
-    title: "Najbrža vozila",
+    title: "Najbrži objekti",
     keywords: [],
     style: createIconStyle(veh_type),
   },
@@ -176,7 +214,7 @@ document.querySelector("#surface-select")?.addEventListener("change", () => {
   updateVectorLayer(
     vectorLayerBikeLanes,
     { surface },
-    createIconStyle(veh_type)
+    bikeLanesVectorStyle(surface)
   );
 });
 
@@ -198,25 +236,20 @@ document
       veh_type = (document.querySelector("#type-select") as HTMLInputElement)
         .value;
 
-      count = +(
-        document.querySelector("#min-vehicles-number") as HTMLInputElement
-      ).value;
+      cnt = (document.querySelector("#min-vehicles-number") as HTMLInputElement)
+        .value;
 
-      updateVectorLayer(
-        vectorLayerMostBusyStreet,
-        {
-          timestamp,
-          veh_type,
-          count,
-        },
-        createIconStyle(veh_type)
-      );
+      updateVectorLayer(vectorLayerMostBusyStreet, {
+        timestamp,
+        veh_type,
+        cnt,
+      });
       updateVectorLayer(
         vectorLayerCarsOnMostBusyStreet,
         {
           timestamp,
           veh_type,
-          count,
+          cnt,
         },
         createIconStyle(veh_type)
       );
@@ -225,16 +258,16 @@ document
         {
           timestamp,
           veh_type,
-          count,
+          cnt,
         },
-        createIconStyle(veh_type)
+        createIconStyle("traffic-light")
       );
       updateVectorLayer(
         vectorLayerCarsOnTrafficLightJams,
         {
           timestamp,
           veh_type,
-          count,
+          cnt,
         },
         createIconStyle(veh_type)
       );
@@ -248,6 +281,32 @@ document
       );
     })
   );
+
+const vectorLayerObjectTrajectory = initLayer({
+  name: "object_trajectory",
+  params: {},
+  service: "WFS",
+  title: "Putanja izabranog objekta",
+  keywords: [],
+}) as VectorLayer<any>;
+vectorLayerObjectTrajectory.setVisible(false);
+
+const objectTrajectoryFeatureLine = new Feature({
+  geometry: new LineString([]),
+});
+
+var vectorLineSrc = new VectorSource({
+  features: [objectTrajectoryFeatureLine],
+});
+
+const objectTrajectoryVectorLayer = new VectorLayer({
+  source: vectorLineSrc,
+  style: new Style({
+    stroke: new Stroke({ color: "#0a74ff", width: 3 }),
+  }),
+});
+objectTrajectoryVectorLayer.setVisible(false);
+map.addLayer(objectTrajectoryVectorLayer);
 
 map.on("singleclick", async (evt) => {
   const featurePromises = map
@@ -265,43 +324,46 @@ map.on("singleclick", async (evt) => {
       }
     });
 
-  const feature = (await Promise.all(featurePromises)).find((f) => f !== null);
-
+  const features = (await Promise.all(featurePromises)).filter(
+    (f) => f !== null
+  );
+  const [feature] = features;
   if (!feature) {
     popup.setPosition(undefined);
+    vectorLayerObjectTrajectory.setVisible(false);
+    objectTrajectoryVectorLayer.setVisible(false);
     return;
+  }
+
+  const layername = feature.id_.substring(0, feature.id_.indexOf("."));
+
+  if (layername === "fastest_vehicles_at_timestamp") {
+    const { extent } = map.getView().getViewStateAndExtent();
+
+    const url =
+      `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=object_trajectory&viewparams=osm_id:${feature.get(
+        "osm_id"
+      )}` +
+      `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
+        ","
+      )},EPSG:3857`;
+
+    const res = await fetch(url);
+    const { features } = await res.json();
+
+    const coordinates = features.map((f: any) => f.geometry.coordinates);
+    objectTrajectoryFeatureLine.setGeometry(new LineString(coordinates));
+    objectTrajectoryVectorLayer.setVisible(true);
   }
 
   const props = feature.getProperties() ?? feature.properties;
 
+  if (feature)
+    updateVectorLayer(vectorLayerObjectTrajectory, { osm_id: props.osm_id });
+  // vectorLayerObjectTrajectory.setVisible(true);
+
   displayDetailsPopUp(evt.coordinate, props);
 });
-
-function initLayer(layerInfo: LayerInfo, parent: HTMLElement) {
-  const item = document.createElement("div");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = false;
-
-  let layer: Layer;
-  if (layerInfo.service == "WMS") {
-    layer = createTileLayer(layerInfo);
-  } else {
-    layer = createVectorLayer(layerInfo);
-  }
-  layer.setVisible(false);
-  map.addLayer(layer);
-
-  checkbox.addEventListener("change", (_) => {
-    layer.setVisible(checkbox.checked);
-    popup.setPosition(undefined);
-  });
-  item.appendChild(checkbox);
-  item.appendChild(document.createTextNode(layerInfo.title));
-  parent.appendChild(item);
-
-  return layer;
-}
 
 function displayDetailsPopUp(coordinate: Coordinate, props: any) {
   let info = "";
@@ -321,3 +383,28 @@ function displayDetailsPopUp(coordinate: Coordinate, props: any) {
 
   popup.setPosition(coordinate);
 }
+
+const heatmapSource = new VectorSource({
+  format: new GeoJSON(),
+  url: (extent) => {
+    return (
+      `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=traffic_heatmap&viewparams=time_from:2024-07-04 09:10:00;time_to:2024-07-04 09:11:00` +
+      `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
+        ","
+      )},EPSG:3857`
+    );
+  },
+  strategy: bboxStrategy,
+});
+
+const heatmapLayer = new Heatmap({
+  source: heatmapSource,
+  blur: 15, // Blur radius (optional)
+  radius: 3, // Heatmap radius (optional)
+  gradient: ["#00f", "#0ff", "#0f0", "#ff0", "#f00"], // Gradient colors (optional)
+  weight: function (feature) {
+    return feature.get("traffic_density"); // Function to get intensity value
+  },
+});
+
+map.addLayer(heatmapLayer);

@@ -12,8 +12,11 @@ import { Map } from "ol";
 import Style from "ol/style/Style";
 import Icon from "ol/style/Icon";
 import { FeatureLike } from "ol/Feature";
+import Stroke from "ol/style/Stroke";
+import Text from "ol/style/Text";
+import Fill from "ol/style/Fill";
 
-export async function getWFSLayersInfo(): Promise<LayerInfo[]> {
+export const getWFSLayersInfo = async (): Promise<LayerInfo[]> => {
   const response = await fetch(
     `${GEOSERVER_URI}/${WORKSPACE}/wfs?request=GetCapabilities&service=WFS`
   );
@@ -36,9 +39,9 @@ export async function getWFSLayersInfo(): Promise<LayerInfo[]> {
       ).map((el) => el.textContent),
     };
   });
-}
+};
 
-export async function getWMSLayersInfo(): Promise<LayerInfo[]> {
+export const getWMSLayersInfo = async (): Promise<LayerInfo[]> => {
   const wmsCapabilitiesResponse = await fetch(
     `${GEOSERVER_URI}/${WORKSPACE}/wms?request=GetCapabilities&service=WMS`
   );
@@ -59,11 +62,9 @@ export async function getWMSLayersInfo(): Promise<LayerInfo[]> {
   );
 
   return layers;
-}
+};
 
-export function createVectorLayer(layer: LayerInfo): VectorLayer<any> {
-  // const style = vectorLayerPredefinedStyles[layer.name];
-  // console.log(`Styles ${style ? "found" : "missing"} for layer ${layer.name}`);
+export const createVectorLayer = (layer: LayerInfo): VectorLayer<any> => {
   const viewParams = layer.params
     ? `&viewparams=${Object.entries(layer.params)
         .map(([k, v]) => `${k}:${v}`)
@@ -83,14 +84,14 @@ export function createVectorLayer(layer: LayerInfo): VectorLayer<any> {
       },
       strategy: bboxStrategy,
     }),
-    style: layer.style,
+    style: predefinedVectorStyles[layer.name] ?? layer.style,
   });
   Object.entries(layer).forEach(([k, v]) => vl.set(k, v));
 
   return vl;
-}
+};
 
-export function createTileLayer(layer: LayerInfo): TileLayer<TileWMS> {
+export const createTileLayer = (layer: LayerInfo): TileLayer<TileWMS> => {
   const VIEWPARAMS = layer.params
     ? Object.entries(layer.params)
         .map(([k, v]) => `${k}:${v}`)
@@ -113,13 +114,13 @@ export function createTileLayer(layer: LayerInfo): TileLayer<TileWMS> {
   Object.entries(layer).forEach(([k, v]) => tl.set(k, v));
 
   return tl;
-}
+};
 
-export function updateVectorLayer(
+export const updateVectorLayer = (
   layer: VectorLayer<any>,
   params: Record<string, any>,
-  style: (feature: FeatureLike) => Style
-) {
+  style?: Style | ((feature: FeatureLike) => Style)
+) => {
   const viewParams = `&viewparams=${Object.entries(params)
     .map(([k, v]) => `${k}:${v}`)
     .join(";")}`;
@@ -140,15 +141,17 @@ export function updateVectorLayer(
         "&srsname=EPSG:3857" +
         `&bbox=${extent.join(",")},EPSG:3857`
     );
-  layer.setStyle(style);
+  if (style) {
+    layer.setStyle(style);
+  }
   layer.getSource()?.refresh();
-}
+};
 
-export function sanitize(key: string): string {
+export const sanitize = (key: string): string => {
   return capitalize(key.replace(/[:_]/g, " "));
-}
+};
 
-export function sanitizeValue(key: string, value: string | number): string {
+export const sanitizeValue = (key: string, value: string | number): string => {
   if (typeof value === "string" && key !== "ele") {
     return sanitize(value);
   }
@@ -165,17 +168,17 @@ export function sanitizeValue(key: string, value: string | number): string {
   }
 
   return value.toString();
-}
+};
 
-export function capitalize(value: string): string {
+export const capitalize = (value: string): string => {
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
+};
 
-export async function getFirstFeatureFromTileLayer(
+export const getFirstFeatureFromTileLayer = async (
   map: Map,
   layer: TileLayer<any>,
   pixel: Pixel
-) {
+) => {
   const viewResolution = map.getView().getResolution();
 
   if (!viewResolution) return null;
@@ -192,21 +195,71 @@ export async function getFirstFeatureFromTileLayer(
   const features = (await response.json()).features;
 
   return features.length > 0 ? features[0] : null;
-}
+};
 
-export function getFirstFeatureFromVectorLayer(map: Map, pixel: Pixel) {
+export const getFirstFeatureFromVectorLayer = (map: Map, pixel: Pixel) => {
   const features = map.getFeaturesAtPixel(pixel);
   return features.length ? features[0] : null;
-}
+};
 
-export function createIconStyle(fileName: string) {
-  return (feature: FeatureLike) =>
+export const createIconStyle = (fileName: string) => (feature: FeatureLike) =>
+  new Style({
+    image: new Icon({
+      anchor: [0.5, 0.5],
+      src: `./assets/${fileName}.png`,
+      scale: 0.25,
+      rotation: feature.get("angle")
+        ? ((feature.get("angle") + 90) * Math.PI) / 180
+        : 0,
+    }),
+  });
+
+export const createIcon = (fileName: string) => (feature: FeatureLike) =>
+  new Icon({
+    anchor: [0.5, 0.5],
+    src: `./assets/${fileName}.png`,
+    scale: 0.25,
+    rotation: feature.get("angle")
+      ? ((feature.get("angle") + 90) * Math.PI) / 180
+      : 0,
+  });
+
+export const createText = (feature: FeatureLike) =>
+  new Text({
+    text: feature.get("name") ?? "",
+    fill: new Fill({ color: "#0000FF" }),
+    offsetY: -25,
+    offsetX: 25,
+    scale: 1.5,
+  });
+
+export const predefinedVectorStyles: {
+  [key: string]: Style | ((feature: FeatureLike) => Style);
+} = {
+  [`${WORKSPACE}:objekti hitne pomoci`]: (feature) =>
     new Style({
-      image: new Icon({
-        anchor: [0.5, 1],
-        src: `./assets/${fileName}.png`,
-        scale: 0.1,
-        rotation: ((feature.get("angle") + 90) * Math.PI) / 180,
+      image: createIcon("hospital")(feature),
+      text: new Text({
+        text: feature.get("name") ?? "",
+        fill: new Fill({ color: "#FF0000" }),
+        offsetY: -25,
+        scale: 1.5,
       }),
-    });
-}
+    }),
+  [`${WORKSPACE}:autobuske nis`]: createIconStyle("bus-stop"),
+  [`${WORKSPACE}:autobuske beograd`]: createIconStyle("bus-stop"),
+  [`${WORKSPACE}:Reke koje protiču kroz gradove (> 10km)`]: (feature) =>
+    new Style({
+      text: new Text({
+        text: feature.get("name") ?? "",
+        fill: new Fill({ color: "#0000FF" }),
+        offsetY: -25,
+        offsetX: 25,
+        scale: 1.5,
+      }),
+      stroke: new Stroke({
+        color: "#0000FF",
+        width: 3,
+      }),
+    }),
+};

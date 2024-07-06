@@ -28,12 +28,12 @@
             <div>
                 Trenutak u vremenu
                 <input type="range" min="0" max="168" value="00" id="time-slider"
-                    oninput="this.nextElementSibling.value = '+' + this.value + ':00'">
+                    oninput="this.nextElementSibling.value = '+' + this.value.padStart(2,'0') + ':00'">
                 <output>+00:00</output>
             </div>
 
             <div>
-                Vrsta vozila
+                Vrsta objekta
                 <select id="type-select">
                     <option value="veh_passenger">Putničko vozilo</option>
                     <option value="bus_bus">Autobus</option>
@@ -44,7 +44,7 @@
             </div>
 
             <div>
-                Min. broj vozila
+                Min. broj objekata
                 <input type="number" min="1" max="300" value="1" id="min-vehicles-number" step="1">
             </div>
         </div>

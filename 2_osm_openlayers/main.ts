@@ -15,7 +15,6 @@ import {
   sanitizeValue as sanitizeValue,
 } from "../lib/src/util";
 import "./style.css";
-import Feature from "ol/Feature";
 import { WORKSPACE, parametrizedLayers } from "../lib/src/constants";
 import { LayerInfo } from "../lib/src/types";
 import BaseLayer from "ol/layer/Base";
@@ -51,6 +50,30 @@ if (wfsLayers?.length > 0) {
   wmsHeader.textContent = "WMS slojevi";
   legend.appendChild(wmsHeader);
 }
+
+const initLayer = (layerInfo: LayerInfo) => {
+  const item = document.createElement("div");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = false;
+
+  let layer;
+  if (layerInfo.service == "WMS") {
+    layer = createTileLayer(layerInfo);
+  } else {
+    layer = createVectorLayer(layerInfo);
+  }
+  layer.setVisible(false);
+  map.addLayer(layer as unknown as BaseLayer);
+
+  checkbox.addEventListener("change", (_) => {
+    layer.setVisible(checkbox.checked);
+    popup.setPosition(undefined);
+  });
+  item.appendChild(checkbox);
+  item.appendChild(document.createTextNode(layerInfo.title));
+  legend.appendChild(item);
+};
 
 wmsLayers?.filter((l) => !parametrizedLayers.has(l.name)).forEach(initLayer);
 
@@ -92,31 +115,7 @@ map.on("singleclick", async (evt) => {
   displayDetailsPopUp(evt.coordinate, props);
 });
 
-function initLayer(layerInfo: LayerInfo) {
-  const item = document.createElement("div");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = false;
-
-  let layer;
-  if (layerInfo.service == "WMS") {
-    layer = createTileLayer(layerInfo);
-  } else {
-    layer = createVectorLayer(layerInfo);
-  }
-  layer.setVisible(false);
-  map.addLayer(layer as unknown as BaseLayer);
-
-  checkbox.addEventListener("change", (_) => {
-    layer.setVisible(checkbox.checked);
-    popup.setPosition(undefined);
-  });
-  item.appendChild(checkbox);
-  item.appendChild(document.createTextNode(layerInfo.title));
-  legend.appendChild(item);
-}
-
-function displayDetailsPopUp(coordinate: Coordinate, props: any) {
+const displayDetailsPopUp = (coordinate: Coordinate, props: any) => {
   let info = "";
   for (const [key, value] of Object.entries(props)) {
     if (
@@ -133,4 +132,4 @@ function displayDetailsPopUp(coordinate: Coordinate, props: any) {
   document.getElementById("popup-content")!.innerHTML = info;
 
   popup.setPosition(coordinate);
-}
+};

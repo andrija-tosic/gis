@@ -13,7 +13,7 @@ config.read("import.conf")
 conn = psycopg2.connect(
     dbname=config['database']['dbname'],
     user=config['database']['user'],
-    password=config['database']['password'],
+    # password=config['database']['password'],
     host=config['database']['host'],
     port=config['database']['port']
 )
@@ -25,57 +25,66 @@ table_name = config['import']['table_name']
 print("db cleanup")
 db.execute(f"DROP TABLE IF EXISTS {table_name};")
 
+# id SERIAL PRIMARY KEY,
+
 # Create table
 print(f"creating table {table_name}")
 db.execute(f"""
   CREATE TABLE IF NOT EXISTS {table_name} (
-      id SERIAL PRIMARY KEY,
       osm_id VARCHAR(20),
       osm_obj VARCHAR(20),
       timestamp TIMESTAMP,                 
-      veh_type VARCHAR(50),                       
+      obj_type VARCHAR(50),            
       speed FLOAT,
       angle FLOAT,              
-      veh_lane BIGINT NULL,
-      per_edge BIGINT NULL,
-      geom GEOMETRY(Point, 3857)
+      lane_or_edge BIGINT NULL,
+      way GEOMETRY(Point, 3857)
   )
 """)
+print(f"creating hypertable {table_name}")
+db.execute(f"SELECT create_hypertable('{table_name}', by_range('timestamp'));")
 
 # Create indexes if not skipped
 if not config['import'].getboolean('skip_index_creation'):
     print(f"creating index {table_name}_timestamp_idx")
     db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_timestamp_idx ON {table_name} (timestamp);")
 
-    print(f"creating index {table_name}_veh_type_idx")
-    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_veh_type_idx ON {table_name} (veh_type);")
+    print(f"creating index {table_name}_obj_type_idx")
+    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_obj_type_idx ON {table_name} (obj_type);")
 
-    print(f"creating index {table_name}_geom_idx")
-    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_geom_idx ON {table_name} (geom);")
+    print(f"creating index {table_name}_way_idx")
+    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_way_idx ON {table_name} (way);")
+
+    print(f"creating index {table_name}_speed_idx")
+    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_speed_idx ON {table_name} (speed);")
+
+    print(f"creating index {table_name}_lane_or_edge_idx")
+    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_lane_or_edge_idx ON {table_name} (lane_or_edge);")
 
     # Indexes for vehicles
     print(f"creating index {table_name}_osm_id_idx")
     db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_osm_id_idx ON {table_name} (osm_id);")
 
-    print(f"creating index {table_name}_veh_lane_idx")
-    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_veh_lane_idx ON {table_name} (veh_lane);")
-
-    # Indexes for persons
-    print(f"creating index {table_name}_per_edge_idx")
-    db.execute(f"CREATE INDEX IF NOT EXISTS {table_name}_per_edge_idx ON {table_name} (per_edge);")
 else:
     print('skipping index creation')
 
 # Prepare insert query
 insert_query = f"""
-    INSERT INTO {table_name} (osm_id, osm_obj, timestamp, veh_type, speed, angle, veh_lane, per_edge, geom)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 3857))
+    INSERT INTO {table_name} (osm_id, osm_obj, timestamp, obj_type, speed, angle, lane_or_edge, way)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, ST_Transform(ST_SetSRID(ST_MakePoint(%s, %s), 4326), 3857))
 """
+
+total_lines=0 
+data_count=0
 
 # Read data from the file
 file_path = config['file']['path']
 with open(file_path, 'r') as fin:
-    data_count = sum(line.count('<vehicle id') for line in fin) + sum(line.count('<person id') for line in fin)
+    for line in fin:
+        total_lines += 1
+        data_count += line.count('<vehicle id') + line.count('<person id')
+
+print(total_lines, data_count)
 
 context = ET.iterparse(source=file_path, events=("end",), tag="timestep")
 current_time_utc = datetime.now(timezone.utc)
@@ -93,20 +102,19 @@ for (event, timestep) in context:
         obj_lon = float(obj.attrib['x'])
         obj_angle = float(obj.attrib['angle'])
         obj_speed = float(obj.attrib['speed'])
-        veh_type = obj.attrib.get('type', 'person')
+        obj_type = obj.attrib.get('type', 'person')
         
-        veh_lane = None
+        lane_or_edge = None
         if 'lane' in obj.attrib and re.search(r'^-?\d+', obj.attrib['lane']):
-            veh_lane = abs(int(re.search(r'^-?\d+', obj.attrib['lane']).group(0)))
+            lane_or_edge = abs(int(re.search(r'^-?\d+', obj.attrib['lane']).group(0)))
         
-        per_edge = None
         if 'edge' in obj.attrib and re.search(r'^-?\d+', obj.attrib['edge']):
-            per_edge = abs(int(re.search(r'^-?\d+', obj.attrib['edge']).group(0)))
+            lane_or_edge = abs(int(re.search(r'^-?\d+', obj.attrib['edge']).group(0)))
         
         imported += 1
-        db.execute(insert_query, (osm_id, osm_obj, timestamp, veh_type, obj_speed, obj_angle, veh_lane, per_edge, obj_lon, obj_lat))
+        db.execute(insert_query, (osm_id, osm_obj, timestamp, obj_type, obj_speed, obj_angle, lane_or_edge, obj_lon, obj_lat))
 
-    print_progress_bar(imported, data_count, prefix='Progress: ', decimals=2, length=50)
+    print_progress_bar(imported, total_lines, prefix='Progress: ', decimals=2, length=50)
     timestep.clear()
 
 # Commit the transaction

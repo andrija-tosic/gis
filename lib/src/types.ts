@@ -7,5 +7,5 @@ export type LayerInfo = {
   keywords: string[];
   service: "WMS" | "WFS";
   params: Record<string, any>;
-  style?: (feature: FeatureLike) => Style;
+  style?: Style | ((feature: FeatureLike) => Style);
 };
