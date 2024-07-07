@@ -1,10 +1,11 @@
-import { Map, Overlay, View } from "ol";
+import { Feature, Map, Overlay, View } from "ol";
 import { Coordinate } from "ol/coordinate";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import { fromLonLat } from "ol/proj";
 import OSM from "ol/source/OSM";
 import {
+  appendLayer,
   createTileLayer,
   createVectorLayer,
   getFirstFeatureFromTileLayer,
@@ -14,10 +15,13 @@ import {
   sanitize as sanitize,
   sanitizeValue as sanitizeValue,
 } from "../lib/src/util";
-import "./style.css";
-import { WORKSPACE, parametrizedLayers } from "../lib/src/constants";
-import { LayerInfo } from "../lib/src/types";
+import "../lib/src/style.css";
+import { WORKSPACE, PARAMETRIZED_LAYERS } from "../lib/src/constants";
+import { LayerOptions } from "../lib/src/types";
 import BaseLayer from "ol/layer/Base";
+import { Geometry } from "ol/geom";
+import { TileWMS } from "ol/source";
+import Heatmap from "ol/layer/Heatmap";
 
 const legend: HTMLElement = document.getElementById("legend")!!;
 const popup = new Overlay({
@@ -41,51 +45,29 @@ const map = new Map({
 
 const wmsLayers =
   (await getWMSLayersInfo())?.filter(
-    (layer) => !layer.keywords.includes("hide_wms")
+    (layer) => !layer.keywords?.includes("hide_wms")
   ) ?? [];
 const wfsLayers = (await getWFSLayersInfo()) ?? [];
 
 if (wfsLayers?.length > 0) {
-  const wmsHeader = document.createElement("H4");
-  wmsHeader.textContent = "WMS slojevi";
+  const wmsHeader = document.createElement("h2");
+  wmsHeader.textContent = "Pločasti slojevi";
   legend.appendChild(wmsHeader);
 }
 
-const initLayer = (layerInfo: LayerInfo) => {
-  const item = document.createElement("div");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = false;
-
-  let layer;
-  if (layerInfo.service == "WMS") {
-    layer = createTileLayer(layerInfo);
-  } else {
-    layer = createVectorLayer(layerInfo);
-  }
-  layer.setVisible(false);
-  map.addLayer(layer as unknown as BaseLayer);
-
-  checkbox.addEventListener("change", (_) => {
-    layer.setVisible(checkbox.checked);
-    popup.setPosition(undefined);
-  });
-  item.appendChild(checkbox);
-  item.appendChild(document.createTextNode(layerInfo.title));
-  legend.appendChild(item);
-};
-
-wmsLayers?.filter((l) => !parametrizedLayers.has(l.name)).forEach(initLayer);
+wmsLayers
+  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
+  .forEach((l) => appendLayer(map, popup, createTileLayer(l), legend));
 
 if (wfsLayers?.length > 0) {
-  const wfsHeader = document.createElement("H4");
-  wfsHeader.textContent = "WFS slojevi";
+  const wfsHeader = document.createElement("h2");
+  wfsHeader.textContent = "Vektorski slojevi";
   legend.appendChild(wfsHeader);
 }
 
 wfsLayers
-  ?.filter((l) => !parametrizedLayers.has(l.name.replace(WORKSPACE + ":", "")))
-  .forEach(initLayer);
+  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(WORKSPACE + ":", "")))
+  .forEach((l) => appendLayer(map, popup, createVectorLayer(l), legend));
 
 map.on("singleclick", async (evt) => {
   const featurePromises = map

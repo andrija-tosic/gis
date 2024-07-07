@@ -1,11 +1,12 @@
 import { Feature, Map, Overlay, View } from "ol";
 import { Coordinate } from "ol/coordinate";
-import Layer from "ol/layer/Layer";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import { fromLonLat } from "ol/proj";
 import OSM from "ol/source/OSM";
 import {
+  appendLayer,
+  createHeatmapLayer,
   createIconStyle,
   createTileLayer,
   createVectorLayer,
@@ -15,21 +16,19 @@ import {
   getWMSLayersInfo,
   sanitize,
   sanitizeValue,
+  updateHeatmapLayer,
   updateVectorLayer,
 } from "../lib/src/util";
-import "./style.css";
-import { LayerInfo } from "../lib/src/types";
-import { Style, Stroke, Text, Fill } from "ol/style";
+import "../lib/src/style.css";
+import { Style, Stroke } from "ol/style";
 import {
   GEOSERVER_URI,
   WORKSPACE,
-  parametrizedLayers,
+  PARAMETRIZED_LAYERS,
+  HEATMAP_OPTIONS,
 } from "../lib/src/constants";
 import { LineString } from "ol/geom";
 import VectorSource from "ol/source/Vector";
-import GeoJSON from "ol/format/GeoJSON";
-import { bbox as bboxStrategy } from "ol/loadingstrategy";
-import Heatmap from "ol/layer/Heatmap";
 
 const sumoLegend: HTMLElement = document.getElementById("sumo")!;
 const layersDiv: HTMLElement = document.getElementById("layers")!;
@@ -52,35 +51,9 @@ const map = new Map({
   overlays: [popup],
 });
 
-const initLayer = (layerInfo: LayerInfo, parent?: HTMLElement) => {
-  const item = document.createElement("div");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = false;
-
-  let layer: Layer;
-  if (layerInfo.service == "WMS") {
-    layer = createTileLayer(layerInfo);
-  } else {
-    layer = createVectorLayer(layerInfo);
-  }
-  layer.setVisible(false);
-  map.addLayer(layer);
-
-  checkbox.addEventListener("change", (_) => {
-    layer.setVisible(checkbox.checked);
-    popup.setPosition(undefined);
-  });
-  item.appendChild(checkbox);
-  item.appendChild(document.createTextNode(layerInfo.title));
-  parent?.appendChild(item);
-
-  return layer;
-};
-
 const wmsLayers =
   (await getWMSLayersInfo())
-    ?.filter((layer) => !layer.keywords.includes("hide_wms"))
+    ?.filter((layer) => !layer.keywords?.includes("hide_wms"))
     .sort((l1, l2) => l1.title.localeCompare(l2.title)) ?? [];
 
 const wfsLayers =
@@ -89,82 +62,84 @@ const wfsLayers =
   ) ?? [];
 
 if (wfsLayers?.length > 0) {
-  const wmsHeader = document.createElement("H4");
-  wmsHeader.textContent = "WMS slojevi";
+  const wmsHeader = document.createElement("h2");
+  wmsHeader.textContent = "Pločasti slojevi";
   layersDiv.appendChild(wmsHeader);
 }
 
 wmsLayers
-  ?.filter((l) => !parametrizedLayers.has(l.name))
-  .forEach((l) => initLayer(l, layersDiv));
+  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
+  .forEach((l) => appendLayer(map, popup, createTileLayer(l), layersDiv));
 
 if (wfsLayers?.length > 0) {
-  const wfsHeader = document.createElement("H4");
-  wfsHeader.textContent = "WFS slojevi";
+  const wfsHeader = document.createElement("h2");
+  wfsHeader.textContent = "Vektorski slojevi";
   layersDiv.appendChild(wfsHeader);
 }
 
 wfsLayers
-  ?.filter((l) => !parametrizedLayers.has(l.name.replace(`${WORKSPACE}:`, "")))
-  .forEach((l) => initLayer(l, layersDiv));
+  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(`${WORKSPACE}:`, "")))
+  .forEach((l) => appendLayer(map, popup, createVectorLayer(l), layersDiv));
 
-const offset = "2024-07-04 09:11:12.000302";
-let timestamp = offset;
+const offsetFcd = "2024-07-04 09:11:12";
+const offsetEmission = "2024-07-06 15:20:39";
+let timestampFcd = offsetFcd;
+let timestampEmission = offsetEmission;
 let veh_type = "veh_passenger";
 let cnt = "1";
 
-const vectorLayerMostBusyStreet = initLayer(
-  {
+const vectorLayerMostBusyStreet = appendLayer(
+  map,
+  popup,
+  createVectorLayer({
     name: "most_busy_street",
-    params: { timestamp, veh_type, cnt },
-    service: "WFS",
+    params: { timestamp: timestampFcd, veh_type, cnt },
     title: "Ulica sa najgušćim saobraćajem",
-    keywords: [],
     style: new Style({
       stroke: new Stroke({
         color: "#cc1836",
         width: 15,
       }),
     }),
-  },
+  }),
   sumoLegend
-) as VectorLayer<any>;
+);
 
-const vectorLayerCarsOnMostBusyStreet = initLayer(
-  {
+const vectorLayerCarsOnMostBusyStreet = appendLayer(
+  map,
+  popup,
+  createVectorLayer({
     name: "cars_on_most_busy_street",
-    params: { timestamp, veh_type, cnt },
-    service: "WFS",
-    title: "Objekti na ulici sa najgušćim saobraćajem",
-    keywords: [],
+    params: { timestamp: timestampFcd, veh_type, cnt },
+    title: "Vozila na ulici sa najgušćim saobraćajem",
     style: createIconStyle(veh_type),
-  },
+  }),
   sumoLegend
-) as VectorLayer<any>;
+);
 
-const vectorLayerTrafficLightJams = initLayer(
-  {
+const vectorLayerTrafficLightJams = appendLayer(
+  map,
+  popup,
+  createVectorLayer({
     name: "traffic_light_jams",
-    params: { timestamp, veh_type, cnt },
-    service: "WFS",
-    title: "Semafori sa kolonama objekata",
-    keywords: [],
+    params: { timestamp: timestampFcd, veh_type, cnt },
+    title: "Semafori sa kolonama vozila",
     style: createIconStyle("traffic-light"),
-  },
+  }),
   sumoLegend
-) as VectorLayer<any>;
+);
 
-const vectorLayerCarsOnTrafficLightJams = initLayer(
-  {
+const vectorLayerCarsOnTrafficLightJams = appendLayer(
+  map,
+  popup,
+  createVectorLayer({
     name: "cars_on_traffic_light_jams",
-    params: { timestamp, veh_type },
-    service: "WFS",
-    title: "Kolona objekata na semaforima",
-    keywords: [],
+    params: { timestamp: timestampFcd, veh_type },
+    title: "Kolona vozila na semaforima",
     style: createIconStyle(veh_type),
-  },
+  }),
   sumoLegend
-) as VectorLayer<any>;
+);
 
 let surface = (document.querySelector("#surface-select") as HTMLInputElement)
   .value;
@@ -183,29 +158,29 @@ const bikeLanesVectorStyle = (surface: string) =>
     }),
   });
 
-const vectorLayerBikeLanes = initLayer(
-  {
+const vectorLayerBikeLanes = appendLayer(
+  map,
+  popup,
+  createVectorLayer({
     name: "bike_lanes",
     params: { surface },
-    service: "WFS",
     title: "Biciklističke staze",
-    keywords: [],
     style: bikeLanesVectorStyle(surface),
-  },
+  }),
   sumoLegend
-) as VectorLayer<any>;
+);
 
-const vectorLayerFastestVehiclesAtTimestamp = initLayer(
-  {
+const vectorLayerFastestVehiclesAtTimestamp = appendLayer(
+  map,
+  popup,
+  createVectorLayer({
     name: "fastest_vehicles_at_timestamp",
-    params: { timestamp, veh_type },
-    service: "WFS",
-    title: "Najbrži objekti",
-    keywords: [],
+    params: { timestamp: timestampFcd, veh_type },
+    title: "Najbrža vozila u izbranom trenutku",
     style: createIconStyle(veh_type),
-  },
+  }),
   sumoLegend
-) as VectorLayer<any>;
+);
 
 document.querySelector("#surface-select")?.addEventListener("change", () => {
   let surface = (document.querySelector("#surface-select") as HTMLInputElement)
@@ -219,15 +194,24 @@ document.querySelector("#surface-select")?.addEventListener("change", () => {
 });
 
 document
-  .querySelectorAll("#time-slider, #type-select, #min-vehicles-number")!
-  .forEach((el) =>
-    el.addEventListener("change", (e) => {
+  .querySelectorAll(
+    "#time-slider, #type-select, #min-vehicles-number, #timespan-slider"
+  )!
+  .forEach((el) => {
+    el.addEventListener("input", () => {
       const sliderValue = (
         document.querySelector("#time-slider") as HTMLInputElement
       ).value;
 
-      timestamp = new Date(
-        new Date(offset + "Z").getTime() + +sliderValue * 60 * 1000
+      timestampFcd = new Date(
+        new Date(offsetFcd + "Z").getTime() + +sliderValue * 60 * 1000
+      )
+        .toISOString()
+        .replace("T", " ")
+        .replace("Z", "");
+
+      timestampEmission = new Date(
+        new Date(offsetEmission + "Z").getTime() + +sliderValue * 60 * 1000
       )
         .toISOString()
         .replace("T", " ")
@@ -240,14 +224,14 @@ document
         .value;
 
       updateVectorLayer(vectorLayerMostBusyStreet, {
-        timestamp,
+        timestamp: timestampFcd,
         veh_type,
         cnt,
       });
       updateVectorLayer(
         vectorLayerCarsOnMostBusyStreet,
         {
-          timestamp,
+          timestamp: timestampFcd,
           veh_type,
           cnt,
         },
@@ -256,7 +240,7 @@ document
       updateVectorLayer(
         vectorLayerTrafficLightJams,
         {
-          timestamp,
+          timestamp: timestampFcd,
           veh_type,
           cnt,
         },
@@ -265,7 +249,7 @@ document
       updateVectorLayer(
         vectorLayerCarsOnTrafficLightJams,
         {
-          timestamp,
+          timestamp: timestampFcd,
           veh_type,
           cnt,
         },
@@ -274,39 +258,56 @@ document
       updateVectorLayer(
         vectorLayerFastestVehiclesAtTimestamp,
         {
-          timestamp,
+          timestamp: timestampFcd,
           veh_type,
         },
         createIconStyle(veh_type)
       );
-    })
-  );
-
-const vectorLayerObjectTrajectory = initLayer({
-  name: "object_trajectory",
-  params: {},
-  service: "WFS",
-  title: "Putanja izabranog objekta",
-  keywords: [],
-}) as VectorLayer<any>;
-vectorLayerObjectTrajectory.setVisible(false);
+      updateHeatmapLayer(map, speedHeatmapLayer, {
+        time_from: timestampFcd,
+        time_to: new Date(new Date(timestampFcd + "Z").getTime() + 1000)
+          .toISOString()
+          .replace("T", " ")
+          .replace("Z", ""),
+        veh_type,
+      });
+      updateHeatmapLayer(map, trafficHeatmapLayer, {
+        time_from: timestampFcd,
+        time_to: new Date(new Date(timestampFcd + "Z").getTime() + 1000)
+          .toISOString()
+          .replace("T", " ")
+          .replace("Z", ""),
+        veh_type,
+      });
+      updateHeatmapLayer(map, emissionHeatmapLayer, {
+        time_from: timestampEmission,
+        time_to: new Date(new Date(timestampEmission + "Z").getTime() + 1000)
+          .toISOString()
+          .replace("T", " ")
+          .replace("Z", ""),
+        veh_type,
+        emission_col: (
+          document.querySelector(
+            "#emission-substance-select"
+          ) as HTMLInputElement
+        ).value,
+      });
+    });
+  });
 
 const objectTrajectoryFeatureLine = new Feature({
   geometry: new LineString([]),
 });
 
-var vectorLineSrc = new VectorSource({
-  features: [objectTrajectoryFeatureLine],
-});
-
-const objectTrajectoryVectorLayer = new VectorLayer({
-  source: vectorLineSrc,
+const vectorLayerObjectTrajectoryLine = new VectorLayer({
+  source: new VectorSource({
+    features: [objectTrajectoryFeatureLine],
+  }),
   style: new Style({
     stroke: new Stroke({ color: "#0a74ff", width: 3 }),
   }),
 });
-objectTrajectoryVectorLayer.setVisible(false);
-map.addLayer(objectTrajectoryVectorLayer);
+map.addLayer(vectorLayerObjectTrajectoryLine);
 
 map.on("singleclick", async (evt) => {
   const featurePromises = map
@@ -330,14 +331,11 @@ map.on("singleclick", async (evt) => {
   const [feature] = features;
   if (!feature) {
     popup.setPosition(undefined);
-    vectorLayerObjectTrajectory.setVisible(false);
-    objectTrajectoryVectorLayer.setVisible(false);
+    vectorLayerObjectTrajectoryLine.setVisible(false);
     return;
   }
 
-  const layername = feature.id_.substring(0, feature.id_.indexOf("."));
-
-  if (layername === "fastest_vehicles_at_timestamp") {
+  if (feature.get("osm_obj")) {
     const { extent } = map.getView().getViewStateAndExtent();
 
     const url =
@@ -353,14 +351,10 @@ map.on("singleclick", async (evt) => {
 
     const coordinates = features.map((f: any) => f.geometry.coordinates);
     objectTrajectoryFeatureLine.setGeometry(new LineString(coordinates));
-    objectTrajectoryVectorLayer.setVisible(true);
+    vectorLayerObjectTrajectoryLine.setVisible(true);
   }
 
   const props = feature.getProperties() ?? feature.properties;
-
-  if (feature)
-    updateVectorLayer(vectorLayerObjectTrajectory, { osm_id: props.osm_id });
-  // vectorLayerObjectTrajectory.setVisible(true);
 
   displayDetailsPopUp(evt.coordinate, props);
 });
@@ -384,27 +378,77 @@ function displayDetailsPopUp(coordinate: Coordinate, props: any) {
   popup.setPosition(coordinate);
 }
 
-const heatmapSource = new VectorSource({
-  format: new GeoJSON(),
-  url: (extent) => {
-    return (
-      `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=traffic_heatmap&viewparams=time_from:2024-07-04 09:10:00;time_to:2024-07-04 09:11:00` +
-      `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
-        ","
-      )},EPSG:3857`
-    );
-  },
-  strategy: bboxStrategy,
-});
+document
+  .querySelector("#emission-substance-select")!
+  .addEventListener("change", (e) => {
+    updateHeatmapLayer(map, emissionHeatmapLayer, {
+      time_from: timestampEmission,
+      time_to: new Date(new Date(timestampEmission + "Z").getTime() + 1000)
+        .toISOString()
+        .replace("T", " ")
+        .replace("Z", ""),
+      veh_type,
+      emission_col: (e.target as HTMLInputElement).value,
+    });
+    map.render();
+  });
 
-const heatmapLayer = new Heatmap({
-  source: heatmapSource,
-  blur: 15, // Blur radius (optional)
-  radius: 3, // Heatmap radius (optional)
-  gradient: ["#00f", "#0ff", "#0f0", "#ff0", "#f00"], // Gradient colors (optional)
-  weight: function (feature) {
-    return feature.get("traffic_density"); // Function to get intensity value
-  },
-});
+const speedHeatmapLayer = appendLayer(
+  map,
+  popup,
+  createHeatmapLayer({
+    name: "speed_heatmap",
+    title: "Toplotna karta brzine vozila",
+    params: {
+      veh_type,
+      time_from: timestampFcd,
+      time_to: new Date(new Date(timestampFcd + "Z").getTime() + 1000)
+        .toISOString()
+        .replace("T", " ")
+        .replace("Z", ""),
+    },
+    heatmapOptions: HEATMAP_OPTIONS,
+  }),
+  sumoLegend
+);
 
-map.addLayer(heatmapLayer);
+const trafficHeatmapLayer = appendLayer(
+  map,
+  popup,
+  createHeatmapLayer({
+    name: "traffic_heatmap",
+    title: "Toplotna karta gustine saobraćaja",
+    params: {
+      veh_type,
+      time_from: timestampFcd,
+      time_to: new Date(new Date(timestampFcd + "Z").getTime() + 1000)
+        .toISOString()
+        .replace("T", " ")
+        .replace("Z", ""),
+    },
+    heatmapOptions: HEATMAP_OPTIONS,
+  }),
+  sumoLegend
+);
+
+const emissionHeatmapLayer = appendLayer(
+  map,
+  popup,
+  createHeatmapLayer({
+    name: "emission_heatmap",
+    title: "Toplotna karta emisije vozila",
+    params: {
+      time_from: timestampEmission,
+      time_to: new Date(new Date(timestampEmission + "Z").getTime() + 1000)
+        .toISOString()
+        .replace("T", " ")
+        .replace("Z", ""),
+      veh_type,
+      emission_col: (
+        document.querySelector("#emission-substance-select") as HTMLInputElement
+      ).value,
+    },
+    heatmapOptions: HEATMAP_OPTIONS,
+  }),
+  sumoLegend
+);
