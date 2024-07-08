@@ -13,9 +13,9 @@ import {
   fetchWMSLayers,
   updateHeatmapLayer,
   updateVectorLayer,
-  getFeaturePropertiesOnMapClick,
   createWfsUrl,
   showPopup,
+  mapOnClickEvHandler,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { Style, Stroke } from "ol/style";
@@ -30,7 +30,7 @@ import { FeatureLike } from "ol/Feature";
 
 const sumoLegend: HTMLElement = document.getElementById("sumo")!;
 const layersDiv: HTMLElement = document.getElementById("layers")!;
-const popup = new Overlay({
+const overlay = new Overlay({
   element: document.getElementById("popup") ?? undefined,
   autoPan: true,
 });
@@ -46,7 +46,7 @@ const map = new Map({
     center: fromLonLat([20.4612, 44.8125]),
     zoom: 13,
   }),
-  overlays: [popup],
+  overlays: [overlay],
 });
 
 const wmsLayers =
@@ -67,7 +67,7 @@ if (wfsLayers.length > 0) {
 
 wmsLayers
   .filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
-  .forEach((l) => appendLayer(map, popup, createTileLayer(l), layersDiv));
+  .forEach((l) => appendLayer(map, overlay, createTileLayer(l), layersDiv));
 
 if (wfsLayers.length > 0) {
   const wfsHeader = document.createElement("h2");
@@ -77,7 +77,7 @@ if (wfsLayers.length > 0) {
 
 wfsLayers
   .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(`${WORKSPACE}:`, "")))
-  .forEach((l) => appendLayer(map, popup, createVectorLayer(l), layersDiv));
+  .forEach((l) => appendLayer(map, overlay, createVectorLayer(l), layersDiv));
 
 const offsetFcd = "2024-07-04 09:11:12";
 const offsetEmission = "2024-07-06 15:20:39";
@@ -88,7 +88,7 @@ let cnt = "1";
 
 const vectorLayerMostBusyStreet = appendLayer(
   map,
-  popup,
+  overlay,
   createVectorLayer({
     name: "most_busy_street",
     params: { timestamp: timestampFcd, veh_type, cnt },
@@ -105,7 +105,7 @@ const vectorLayerMostBusyStreet = appendLayer(
 
 const vectorLayerCarsOnMostBusyStreet = appendLayer(
   map,
-  popup,
+  overlay,
   createVectorLayer({
     name: "cars_on_most_busy_street",
     params: { timestamp: timestampFcd, veh_type, cnt },
@@ -117,7 +117,7 @@ const vectorLayerCarsOnMostBusyStreet = appendLayer(
 
 const vectorLayerTrafficLightJams = appendLayer(
   map,
-  popup,
+  overlay,
   createVectorLayer({
     name: "traffic_light_jams",
     params: { timestamp: timestampFcd, veh_type, cnt },
@@ -129,7 +129,7 @@ const vectorLayerTrafficLightJams = appendLayer(
 
 const vectorLayerCarsOnTrafficLightJams = appendLayer(
   map,
-  popup,
+  overlay,
   createVectorLayer({
     name: "cars_on_traffic_light_jams",
     params: { timestamp: timestampFcd, veh_type },
@@ -158,7 +158,7 @@ const createBikeLanesVectorStyle = (surface: string) =>
 
 const vectorLayerBikeLanes = appendLayer(
   map,
-  popup,
+  overlay,
   createVectorLayer({
     name: "bike_lanes",
     params: { surface },
@@ -170,7 +170,7 @@ const vectorLayerBikeLanes = appendLayer(
 
 const vectorLayerFastestVehiclesAtTimestamp = appendLayer(
   map,
-  popup,
+  overlay,
   createVectorLayer({
     name: "fastest_vehicles_at_timestamp",
     params: { timestamp: timestampFcd, veh_type },
@@ -307,33 +307,34 @@ const vectorLayerObjectTrajectoryLine = new VectorLayer({
 });
 map.addLayer(vectorLayerObjectTrajectoryLine);
 
-map.on("click", (ev) => {
-  const featureProperties = getFeaturePropertiesOnMapClick(
-    map,
-    popup,
-    () => {
-      vectorLayerObjectTrajectoryLine.setVisible(false);
-    },
-    async (feature: FeatureLike) => {
-      if (feature.get("osm_obj")) {
-        const { extent } = map.getView().getViewStateAndExtent();
+map.on(
+  "click",
+  async (ev) =>
+    await mapOnClickEvHandler(
+      map,
+      overlay,
+      ev,
+      () => {
+        vectorLayerObjectTrajectoryLine.setVisible(false);
+      },
+      async (feature: FeatureLike) => {
+        if (feature.get("osm_obj")) {
+          const { extent } = map.getView().getViewStateAndExtent();
 
-        const url = createWfsUrl("object_trajectory", {
-          osm_id: feature.get("osm_id"),
-        })(extent);
+          const url = createWfsUrl("object_trajectory", {
+            osm_id: feature.get("osm_id"),
+          })(extent);
 
-        const res = await fetch(url);
-        const { features } = await res.json();
+          const res = await fetch(url);
+          const { features } = await res.json();
 
-        const coordinates = features.map((f: any) => f.geometry.coordinates);
-        objectTrajectoryFeatureLine.setGeometry(new LineString(coordinates));
-        vectorLayerObjectTrajectoryLine.setVisible(true);
+          const coordinates = features.map((f: any) => f.geometry.coordinates);
+          objectTrajectoryFeatureLine.setGeometry(new LineString(coordinates));
+          vectorLayerObjectTrajectoryLine.setVisible(true);
+        }
       }
-    }
-  );
-
-  showPopup(ev.coordinate, featureProperties, popup);
-});
+    )
+);
 
 document
   .querySelector("#emission-substance-select")!
@@ -352,7 +353,7 @@ document
 
 const speedHeatmapLayer = appendLayer(
   map,
-  popup,
+  overlay,
   createHeatmapLayer({
     name: "speed_heatmap",
     title: "Toplotna karta brzine vozila",
@@ -371,7 +372,7 @@ const speedHeatmapLayer = appendLayer(
 
 const trafficHeatmapLayer = appendLayer(
   map,
-  popup,
+  overlay,
   createHeatmapLayer({
     name: "traffic_heatmap",
     title: "Toplotna karta gustine saobraćaja",
@@ -390,7 +391,7 @@ const trafficHeatmapLayer = appendLayer(
 
 const emissionHeatmapLayer = appendLayer(
   map,
-  popup,
+  overlay,
   createHeatmapLayer({
     name: "emission_heatmap",
     title: "Toplotna karta emitovanih čestica iz vozila",

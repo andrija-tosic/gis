@@ -8,14 +8,14 @@ import {
   createVectorLayer,
   fetchVectorLayers,
   fetchWMSLayers,
-  getFeaturePropertiesOnMapClick,
+  mapOnClickEvHandler,
   showPopup,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { WORKSPACE, PARAMETRIZED_LAYERS } from "../lib/src/constants";
 
 const legend: HTMLElement = document.getElementById("legend")!!;
-const popup = new Overlay({
+const overlay = new Overlay({
   element: document.getElementById("popup") ?? undefined,
   autoPan: true,
 });
@@ -31,7 +31,7 @@ const map = new Map({
     center: fromLonLat([20.4, 44.05]),
     zoom: 7.4,
   }),
-  overlays: [popup],
+  overlays: [overlay],
 });
 
 const wmsLayers =
@@ -48,7 +48,7 @@ if (wfsLayers?.length > 0) {
 
 wmsLayers
   .filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
-  .forEach((l) => appendLayer(map, popup, createTileLayer(l), legend));
+  .forEach((l) => appendLayer(map, overlay, createTileLayer(l), legend));
 
 if (wfsLayers?.length > 0) {
   const wfsHeader = document.createElement("h2");
@@ -58,9 +58,6 @@ if (wfsLayers?.length > 0) {
 
 wfsLayers
   .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(WORKSPACE + ":", "")))
-  .forEach((l) => appendLayer(map, popup, createVectorLayer(l), legend));
+  .forEach((l) => appendLayer(map, overlay, createVectorLayer(l), legend));
 
-map.on("click", (ev) => {
-  const featureProperties = getFeaturePropertiesOnMapClick(map, popup);
-  showPopup(ev.coordinate, featureProperties, popup);
-});
+map.on("click", async (ev) => await mapOnClickEvHandler(map, overlay, ev));

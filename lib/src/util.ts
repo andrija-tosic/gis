@@ -175,7 +175,7 @@ export const updateVectorLayer = (
 export const showPopup = (
   coordinate: Coordinate,
   props: any,
-  popup: Overlay
+  overlay: Overlay
 ) => {
   let content = "";
 
@@ -187,6 +187,7 @@ export const showPopup = (
     .map(([k, v]) => {
       switch (k) {
         case "speed":
+        case "average_speed":
           return [k, Math.round((v as number) * 3.6) + " km/h"];
         case "angle":
           return [k, v + " deg"];
@@ -201,7 +202,7 @@ export const showPopup = (
 
   document.getElementById("popup-content")!.innerHTML = content;
 
-  popup.setPosition(coordinate);
+  overlay.setPosition(coordinate);
 };
 
 export const getFirstFeatureFromTileLayer = async (
@@ -344,35 +345,55 @@ export function appendLayer(
   return layer;
 }
 
-export const getFeaturePropertiesOnMapClick =
-  (map: Map, popup: Overlay, onFail?: Function, onSuccess?: Function) =>
+const getFeaturePropertiesOnMapClick =
+  (map: Map, overlay: Overlay, onFail?: Function, onSuccess?: Function) =>
   async (ev: MapBrowserEvent<UIEvent>) => {
     const featurePromises = map
       .getAllLayers()
       .slice(1)
       .filter((layer) => layer.isVisible())
       .reverse()
-      .map((layer) => {
+      .map(async (layer) => {
         if (layer instanceof VectorLayer || layer instanceof Heatmap) {
-          return Promise.resolve(getFirstFeatureFromVectorLayer(map, ev.pixel));
+          return getFirstFeatureFromVectorLayer(map, ev.pixel);
         } else if (layer instanceof TileLayer) {
-          return getFirstFeatureFromTileLayer(map, layer, ev.coordinate);
+          return await getFirstFeatureFromTileLayer(map, layer, ev.coordinate);
         } else {
-          return Promise.resolve(null);
+          return null;
         }
       });
 
     const features = (await Promise.all(featurePromises)).filter(
       (f) => f !== null
     );
+
     const [feature] = features;
     if (!feature) {
-      popup.setPosition(undefined);
+      overlay.setPosition(undefined);
       await onFail?.();
-      return;
+      return null;
     }
 
     await onSuccess?.(feature);
 
     return feature.getProperties() ?? feature.properties;
   };
+
+export const mapOnClickEvHandler = async (
+  map: any,
+  overlay: any,
+  ev: MapBrowserEvent<UIEvent>,
+  onFail?: Function,
+  onSuccess?: Function
+) => {
+  const featureProperties = await getFeaturePropertiesOnMapClick(
+    map,
+    overlay,
+    onFail,
+    onSuccess
+  )(ev);
+
+  if (featureProperties) {
+    showPopup(ev.coordinate, featureProperties, overlay);
+  }
+};
