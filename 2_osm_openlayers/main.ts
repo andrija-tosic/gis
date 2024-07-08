@@ -8,7 +8,8 @@ import {
   createVectorLayer,
   fetchVectorLayers,
   fetchWMSLayers,
-  getFeaturesOnMapClick,
+  getFeaturePropertiesOnMapClick,
+  showPopup,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { WORKSPACE, PARAMETRIZED_LAYERS } from "../lib/src/constants";
@@ -59,4 +60,7 @@ wfsLayers
   .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(WORKSPACE + ":", "")))
   .forEach((l) => appendLayer(map, popup, createVectorLayer(l), legend));
 
-map.on("click", getFeaturesOnMapClick(map, popup));
+map.on("click", (ev) => {
+  const featureProperties = getFeaturePropertiesOnMapClick(map, popup);
+  showPopup(ev.coordinate, featureProperties, popup);
+});

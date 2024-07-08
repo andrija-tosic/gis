@@ -13,8 +13,9 @@ import {
   fetchWMSLayers,
   updateHeatmapLayer,
   updateVectorLayer,
-  getFeaturesOnMapClick,
+  getFeaturePropertiesOnMapClick,
   createWfsUrl,
+  showPopup,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { Style, Stroke } from "ol/style";
@@ -306,9 +307,8 @@ const vectorLayerObjectTrajectoryLine = new VectorLayer({
 });
 map.addLayer(vectorLayerObjectTrajectoryLine);
 
-map.on(
-  "click",
-  getFeaturesOnMapClick(
+map.on("click", (ev) => {
+  const featureProperties = getFeaturePropertiesOnMapClick(
     map,
     popup,
     () => {
@@ -330,8 +330,10 @@ map.on(
         vectorLayerObjectTrajectoryLine.setVisible(true);
       }
     }
-  )
-);
+  );
+
+  showPopup(ev.coordinate, featureProperties, popup);
+});
 
 document
   .querySelector("#emission-substance-select")!

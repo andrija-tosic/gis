@@ -165,11 +165,11 @@ export const updateVectorLayer = (
 ) => {
   layer.set("params", params);
 
-  layer.getSource()?.setUrl(createWfsUrl(layer.get("name"), params));
+  layer.getSource()!.setUrl(createWfsUrl(layer.get("name"), params));
   if (style) {
     layer.setStyle(style);
   }
-  layer.getSource()?.refresh();
+  layer.getSource()!.refresh();
 };
 
 export const showPopup = (
@@ -344,7 +344,7 @@ export function appendLayer(
   return layer;
 }
 
-export const getFeaturesOnMapClick =
+export const getFeaturePropertiesOnMapClick =
   (map: Map, popup: Overlay, onFail?: Function, onSuccess?: Function) =>
   async (ev: MapBrowserEvent<UIEvent>) => {
     const featurePromises = map
@@ -374,7 +374,5 @@ export const getFeaturesOnMapClick =
 
     await onSuccess?.(feature);
 
-    const props = feature.getProperties() ?? feature.properties;
-
-    showPopup(ev.coordinate, props, popup);
+    return feature.getProperties() ?? feature.properties;
   };
