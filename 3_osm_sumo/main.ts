@@ -1,5 +1,4 @@
 import { Feature, Map, Overlay, View } from "ol";
-import { Coordinate } from "ol/coordinate";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import { fromLonLat } from "ol/proj";
@@ -10,25 +9,23 @@ import {
   createIconStyle,
   createTileLayer,
   createVectorLayer,
-  getFirstFeatureFromTileLayer,
-  getFirstFeatureFromVectorLayer,
-  getWFSLayersInfo,
-  getWMSLayersInfo,
-  sanitize,
-  sanitizeValue,
+  fetchVectorLayers,
+  fetchWMSLayers,
   updateHeatmapLayer,
   updateVectorLayer,
+  getFeaturesOnMapClick,
+  createWfsUrl,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { Style, Stroke } from "ol/style";
 import {
-  GEOSERVER_URI,
   WORKSPACE,
   PARAMETRIZED_LAYERS,
-  HEATMAP_OPTIONS,
+  createHeatmapOptions,
 } from "../lib/src/constants";
 import { LineString } from "ol/geom";
 import VectorSource from "ol/source/Vector";
+import { FeatureLike } from "ol/Feature";
 
 const sumoLegend: HTMLElement = document.getElementById("sumo")!;
 const layersDiv: HTMLElement = document.getElementById("layers")!;
@@ -52,33 +49,33 @@ const map = new Map({
 });
 
 const wmsLayers =
-  (await getWMSLayersInfo())
-    ?.filter((layer) => !layer.keywords?.includes("hide_wms"))
+  (await fetchWMSLayers())
+    .filter((layer) => !layer.keywords?.includes("hide_wms"))
     .sort((l1, l2) => l1.title.localeCompare(l2.title)) ?? [];
 
 const wfsLayers =
-  (await getWFSLayersInfo()).sort((l1, l2) =>
+  (await fetchVectorLayers()).sort((l1, l2) =>
     l1.title.localeCompare(l2.title)
   ) ?? [];
 
-if (wfsLayers?.length > 0) {
+if (wfsLayers.length > 0) {
   const wmsHeader = document.createElement("h2");
   wmsHeader.textContent = "Pločasti slojevi";
   layersDiv.appendChild(wmsHeader);
 }
 
 wmsLayers
-  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
+  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
   .forEach((l) => appendLayer(map, popup, createTileLayer(l), layersDiv));
 
-if (wfsLayers?.length > 0) {
+if (wfsLayers.length > 0) {
   const wfsHeader = document.createElement("h2");
   wfsHeader.textContent = "Vektorski slojevi";
   layersDiv.appendChild(wfsHeader);
 }
 
 wfsLayers
-  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(`${WORKSPACE}:`, "")))
+  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(`${WORKSPACE}:`, "")))
   .forEach((l) => appendLayer(map, popup, createVectorLayer(l), layersDiv));
 
 const offsetFcd = "2024-07-04 09:11:12";
@@ -144,7 +141,7 @@ const vectorLayerCarsOnTrafficLightJams = appendLayer(
 let surface = (document.querySelector("#surface-select") as HTMLInputElement)
   .value;
 
-const bikeLanesVectorStyle = (surface: string) =>
+const createBikeLanesVectorStyle = (surface: string) =>
   new Style({
     stroke: new Stroke({
       color: {
@@ -165,7 +162,7 @@ const vectorLayerBikeLanes = appendLayer(
     name: "bike_lanes",
     params: { surface },
     title: "Biciklističke staze",
-    style: bikeLanesVectorStyle(surface),
+    style: createBikeLanesVectorStyle(surface),
   }),
   sumoLegend
 );
@@ -176,7 +173,7 @@ const vectorLayerFastestVehiclesAtTimestamp = appendLayer(
   createVectorLayer({
     name: "fastest_vehicles_at_timestamp",
     params: { timestamp: timestampFcd, veh_type },
-    title: "Najbrža vozila u izbranom trenutku",
+    title: "Najbrža vozila u izabranom trenutku",
     style: createIconStyle(veh_type),
   }),
   sumoLegend
@@ -189,7 +186,7 @@ document.querySelector("#surface-select")?.addEventListener("change", () => {
   updateVectorLayer(
     vectorLayerBikeLanes,
     { surface },
-    bikeLanesVectorStyle(surface)
+    createBikeLanesVectorStyle(surface)
   );
 });
 
@@ -198,7 +195,7 @@ document
     "#time-slider, #type-select, #min-vehicles-number, #timespan-slider"
   )!
   .forEach((el) => {
-    el.addEventListener("input", () => {
+    el.addEventListener("change", () => {
       const sliderValue = (
         document.querySelector("#time-slider") as HTMLInputElement
       ).value;
@@ -309,74 +306,32 @@ const vectorLayerObjectTrajectoryLine = new VectorLayer({
 });
 map.addLayer(vectorLayerObjectTrajectoryLine);
 
-map.on("singleclick", async (evt) => {
-  const featurePromises = map
-    .getAllLayers()
-    .slice(1)
-    .filter((layer) => layer.isVisible())
-    .toReversed()
-    .map((layer) => {
-      if (layer instanceof VectorLayer) {
-        return Promise.resolve(getFirstFeatureFromVectorLayer(map, evt.pixel));
-      } else if (layer instanceof TileLayer) {
-        return getFirstFeatureFromTileLayer(map, layer, evt.coordinate);
-      } else {
-        return Promise.resolve(null);
+map.on(
+  "click",
+  getFeaturesOnMapClick(
+    map,
+    popup,
+    () => {
+      vectorLayerObjectTrajectoryLine.setVisible(false);
+    },
+    async (feature: FeatureLike) => {
+      if (feature.get("osm_obj")) {
+        const { extent } = map.getView().getViewStateAndExtent();
+
+        const url = createWfsUrl("object_trajectory", {
+          osm_id: feature.get("osm_id"),
+        })(extent);
+
+        const res = await fetch(url);
+        const { features } = await res.json();
+
+        const coordinates = features.map((f: any) => f.geometry.coordinates);
+        objectTrajectoryFeatureLine.setGeometry(new LineString(coordinates));
+        vectorLayerObjectTrajectoryLine.setVisible(true);
       }
-    });
-
-  const features = (await Promise.all(featurePromises)).filter(
-    (f) => f !== null
-  );
-  const [feature] = features;
-  if (!feature) {
-    popup.setPosition(undefined);
-    vectorLayerObjectTrajectoryLine.setVisible(false);
-    return;
-  }
-
-  if (feature.get("osm_obj")) {
-    const { extent } = map.getView().getViewStateAndExtent();
-
-    const url =
-      `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=object_trajectory&viewparams=osm_id:${feature.get(
-        "osm_id"
-      )}` +
-      `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
-        ","
-      )},EPSG:3857`;
-
-    const res = await fetch(url);
-    const { features } = await res.json();
-
-    const coordinates = features.map((f: any) => f.geometry.coordinates);
-    objectTrajectoryFeatureLine.setGeometry(new LineString(coordinates));
-    vectorLayerObjectTrajectoryLine.setVisible(true);
-  }
-
-  const props = feature.getProperties() ?? feature.properties;
-
-  displayDetailsPopUp(evt.coordinate, props);
-});
-
-function displayDetailsPopUp(coordinate: Coordinate, props: any) {
-  let info = "";
-  for (const [key, value] of Object.entries(props)) {
-    if (
-      !value ||
-      key == "way" ||
-      (typeof value !== "string" && typeof value !== "number")
-    ) {
-      continue;
     }
-
-    info = info.concat(`${sanitize(key)}: ${sanitizeValue(key, value)}<br>`);
-  }
-
-  document.getElementById("popup-content")!.innerHTML = info;
-
-  popup.setPosition(coordinate);
-}
+  )
+);
 
 document
   .querySelector("#emission-substance-select")!
@@ -407,7 +362,7 @@ const speedHeatmapLayer = appendLayer(
         .replace("T", " ")
         .replace("Z", ""),
     },
-    heatmapOptions: HEATMAP_OPTIONS,
+    heatmapOptions: createHeatmapOptions("avg_speed"),
   }),
   sumoLegend
 );
@@ -426,7 +381,7 @@ const trafficHeatmapLayer = appendLayer(
         .replace("T", " ")
         .replace("Z", ""),
     },
-    heatmapOptions: HEATMAP_OPTIONS,
+    heatmapOptions: createHeatmapOptions("traffic_density"),
   }),
   sumoLegend
 );
@@ -436,7 +391,7 @@ const emissionHeatmapLayer = appendLayer(
   popup,
   createHeatmapLayer({
     name: "emission_heatmap",
-    title: "Toplotna karta emisije vozila",
+    title: "Toplotna karta emitovanih čestica iz vozila",
     params: {
       time_from: timestampEmission,
       time_to: new Date(new Date(timestampEmission + "Z").getTime() + 1000)
@@ -448,7 +403,7 @@ const emissionHeatmapLayer = appendLayer(
         document.querySelector("#emission-substance-select") as HTMLInputElement
       ).value,
     },
-    heatmapOptions: HEATMAP_OPTIONS,
+    heatmapOptions: createHeatmapOptions("avg_emission"),
   }),
   sumoLegend
 );

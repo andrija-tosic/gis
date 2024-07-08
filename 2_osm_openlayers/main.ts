@@ -1,27 +1,17 @@
-import { Feature, Map, Overlay, View } from "ol";
-import { Coordinate } from "ol/coordinate";
+import { Map, Overlay, View } from "ol";
 import TileLayer from "ol/layer/Tile";
-import VectorLayer from "ol/layer/Vector";
 import { fromLonLat } from "ol/proj";
 import OSM from "ol/source/OSM";
 import {
   appendLayer,
   createTileLayer,
   createVectorLayer,
-  getFirstFeatureFromTileLayer,
-  getFirstFeatureFromVectorLayer,
-  getWFSLayersInfo,
-  getWMSLayersInfo,
-  sanitize as sanitize,
-  sanitizeValue as sanitizeValue,
+  fetchVectorLayers,
+  fetchWMSLayers,
+  getFeaturesOnMapClick,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { WORKSPACE, PARAMETRIZED_LAYERS } from "../lib/src/constants";
-import { LayerOptions } from "../lib/src/types";
-import BaseLayer from "ol/layer/Base";
-import { Geometry } from "ol/geom";
-import { TileWMS } from "ol/source";
-import Heatmap from "ol/layer/Heatmap";
 
 const legend: HTMLElement = document.getElementById("legend")!!;
 const popup = new Overlay({
@@ -44,10 +34,10 @@ const map = new Map({
 });
 
 const wmsLayers =
-  (await getWMSLayersInfo())?.filter(
+  (await fetchWMSLayers())?.filter(
     (layer) => !layer.keywords?.includes("hide_wms")
   ) ?? [];
-const wfsLayers = (await getWFSLayersInfo()) ?? [];
+const wfsLayers = (await fetchVectorLayers()) ?? [];
 
 if (wfsLayers?.length > 0) {
   const wmsHeader = document.createElement("h2");
@@ -56,7 +46,7 @@ if (wfsLayers?.length > 0) {
 }
 
 wmsLayers
-  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
+  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name))
   .forEach((l) => appendLayer(map, popup, createTileLayer(l), legend));
 
 if (wfsLayers?.length > 0) {
@@ -66,52 +56,7 @@ if (wfsLayers?.length > 0) {
 }
 
 wfsLayers
-  ?.filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(WORKSPACE + ":", "")))
+  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(WORKSPACE + ":", "")))
   .forEach((l) => appendLayer(map, popup, createVectorLayer(l), legend));
 
-map.on("singleclick", async (evt) => {
-  const featurePromises = map
-    .getAllLayers()
-    .slice(1)
-    .filter((layer) => layer.isVisible())
-    .toReversed()
-    .map((layer) => {
-      if (layer instanceof VectorLayer) {
-        return Promise.resolve(getFirstFeatureFromVectorLayer(map, evt.pixel));
-      } else if (layer instanceof TileLayer) {
-        return getFirstFeatureFromTileLayer(map, layer, evt.coordinate);
-      } else {
-        return Promise.resolve(null);
-      }
-    });
-
-  const feature = (await Promise.all(featurePromises)).find((f) => f !== null);
-
-  if (!feature) {
-    popup.setPosition(undefined);
-    return;
-  }
-
-  const props = feature.getProperties() ?? feature.properties;
-
-  displayDetailsPopUp(evt.coordinate, props);
-});
-
-const displayDetailsPopUp = (coordinate: Coordinate, props: any) => {
-  let info = "";
-  for (const [key, value] of Object.entries(props)) {
-    if (
-      !value ||
-      key == "way" ||
-      (typeof value !== "string" && typeof value !== "number")
-    ) {
-      continue;
-    }
-
-    info = info.concat(`${sanitize(key)}: ${sanitizeValue(key, value)}<br>`);
-  }
-
-  document.getElementById("popup-content")!.innerHTML = info;
-
-  popup.setPosition(coordinate);
-};
+map.on("click", getFeaturesOnMapClick(map, popup));

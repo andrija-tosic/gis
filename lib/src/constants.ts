@@ -18,9 +18,11 @@ export const PARAMETRIZED_LAYERS = new Set([
   "emission_heatmap",
 ]);
 
-export const HEATMAP_OPTIONS: Options<Feature<Geometry>> = {
+export const createHeatmapOptions = (
+  featureName: string
+): Options<Feature<Geometry>> => ({
   blur: 15,
   radius: 3,
   gradient: ["#00f", "#0ff", "#0f0", "#ff0", "#f00"],
-  weight: (feature) => feature.get("avg_emission"),
-};
+  weight: (feature) => feature.get(featureName),
+});

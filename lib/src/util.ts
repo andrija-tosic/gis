@@ -1,6 +1,6 @@
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
-import Heatmap, { Options } from "ol/layer/Heatmap";
+import Heatmap from "ol/layer/Heatmap";
 import { TileWMS } from "ol/source";
 import VectorSource from "ol/source/Vector";
 import GeoJSON from "ol/format/GeoJSON";
@@ -9,7 +9,7 @@ import { WMSCapabilities } from "ol/format";
 import { GEOSERVER_URI, WORKSPACE } from "./constants";
 import { LayerOptions } from "./types";
 import { Pixel } from "ol/pixel";
-import { Map, Overlay } from "ol";
+import { Map, MapBrowserEvent, Overlay } from "ol";
 import Style from "ol/style/Style";
 import Icon from "ol/style/Icon";
 import Feature, { FeatureLike } from "ol/Feature";
@@ -17,23 +17,22 @@ import Stroke from "ol/style/Stroke";
 import Text from "ol/style/Text";
 import Fill from "ol/style/Fill";
 import { Geometry } from "ol/geom";
+import { Coordinate } from "ol/coordinate";
+import { Extent } from "ol/extent";
 
-export const getWFSLayersInfo = async (): Promise<LayerOptions[]> => {
-  const response = await fetch(
+export const fetchVectorLayers = async (): Promise<LayerOptions[]> => {
+  const res = await fetch(
     `${GEOSERVER_URI}/${WORKSPACE}/wfs?request=GetCapabilities&service=WFS`
   );
 
-  const xmlText = await response.text();
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+  const xmlText = await res.text();
+  const xmlDoc = new DOMParser().parseFromString(xmlText, "text/xml");
 
   const featureElements = xmlDoc.getElementsByTagName("FeatureType");
-  return Array.from(featureElements).map((featureElement) => {
-    const name = featureElement.getElementsByTagName("Name")[0].textContent!;
-    const title = featureElement.getElementsByTagName("Title")[0].textContent!;
+  return [...featureElements].map((featureElement) => {
     return {
-      name: name,
-      title: title,
+      name: featureElement.getElementsByTagName("Name")[0].textContent!,
+      title: featureElement.getElementsByTagName("Title")[0].textContent!,
       keywords: Array.from(
         featureElement.getElementsByTagName("ows:Keyword")
       ).map((el) => el.textContent!),
@@ -41,15 +40,15 @@ export const getWFSLayersInfo = async (): Promise<LayerOptions[]> => {
   });
 };
 
-export const getWMSLayersInfo = async (): Promise<LayerOptions[]> => {
-  const wmsCapabilitiesResponse = await fetch(
+export const fetchWMSLayers = async (): Promise<LayerOptions[]> => {
+  const wmsCapabilitiesRes = await fetch(
     `${GEOSERVER_URI}/${WORKSPACE}/wms?request=GetCapabilities&service=WMS`
   );
 
-  const text = await wmsCapabilitiesResponse.text();
+  const text = await wmsCapabilitiesRes.text();
   const capabilities = new WMSCapabilities().read(text);
 
-  const layers: LayerOptions[] = capabilities.Capability.Layer.Layer?.map(
+  const layers: LayerOptions[] = capabilities.Capability.Layer.Layer!.map(
     (responseLayer: any) => {
       return {
         name: responseLayer.Name,
@@ -62,28 +61,32 @@ export const getWMSLayersInfo = async (): Promise<LayerOptions[]> => {
   return layers;
 };
 
+export const createWfsUrl =
+  (layerName: string, viewParamsObj?: Record<string, any>) =>
+  (extent: Extent) => {
+    const viewParams = viewParamsObj
+      ? `&viewparams=${Object.entries(viewParamsObj)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(";")}`
+      : "";
+
+    return (
+      `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=${layerName}${viewParams}` +
+      `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
+        ","
+      )},EPSG:3857`
+    );
+  };
+
 export const createVectorLayer = (
   layer: LayerOptions
 ): VectorLayer<Feature<Geometry>> => {
-  const viewParams = layer.params
-    ? `&viewparams=${Object.entries(layer.params)
-        .map(([k, v]) => `${k}:${v}`)
-        .join(";")}`
-    : "";
-
   const vl = new VectorLayer({
     source:
       layer.source ??
       new VectorSource({
         format: new GeoJSON(),
-        url: (extent) => {
-          return (
-            `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=${layer.name}${viewParams}` +
-            `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
-              ","
-            )},EPSG:3857`
-          );
-        },
+        url: createWfsUrl(layer.name, layer.params),
         strategy: bboxStrategy,
       }),
     style: predefinedVectorStyles[layer.name] ?? layer.style,
@@ -119,24 +122,11 @@ export const createTileLayer = (layer: LayerOptions): TileLayer<TileWMS> => {
 };
 
 export const createHeatmapLayer = (layer: LayerOptions) => {
-  const viewParams = layer.params
-    ? `&viewparams=${Object.entries(layer.params)
-        .map(([k, v]) => `${k}:${v}`)
-        .join(";")}`
-    : "";
-
   const hl = new Heatmap({
     ...layer.heatmapOptions,
     source: new VectorSource({
       format: new GeoJSON(),
-      url: (extent) => {
-        return (
-          `${GEOSERVER_URI}/${WORKSPACE}/wfs?service=WFS&request=GetFeature&typename=${layer.name}${viewParams}` +
-          `&outputFormat=application/json&srsname=EPSG:3857&bbox=${extent.join(
-            ","
-          )},EPSG:3857`
-        );
-      },
+      url: createWfsUrl(layer.name, layer.params),
       strategy: bboxStrategy,
     }),
   });
@@ -173,57 +163,45 @@ export const updateVectorLayer = (
   params: Record<string, any>,
   style?: Style | ((feature: FeatureLike) => Style)
 ) => {
-  const viewParams = `&viewparams=${Object.entries(params)
-    .map(([k, v]) => `${k}:${v}`)
-    .join(";")}`;
-
   layer.set("params", params);
 
-  layer
-    .getSource()
-    ?.setUrl(
-      (extent) =>
-        "http://localhost:8080/geoserver/wfs" +
-        "?service=WFS" +
-        "&version=1.1.0" +
-        "&request=GetFeature" +
-        `&typeName=${WORKSPACE}:${layer.get("name")}` +
-        viewParams +
-        "&outputFormat=application/json" +
-        "&srsname=EPSG:3857" +
-        `&bbox=${extent.join(",")},EPSG:3857`
-    );
+  layer.getSource()?.setUrl(createWfsUrl(layer.get("name"), params));
   if (style) {
     layer.setStyle(style);
   }
   layer.getSource()?.refresh();
 };
 
-export const sanitize = (key: string): string => {
-  return capitalize(key.replace(/[:_]/g, " "));
-};
+export const showPopup = (
+  coordinate: Coordinate,
+  props: any,
+  popup: Overlay
+) => {
+  let content = "";
 
-export const sanitizeValue = (key: string, value: string | number): string => {
-  if (typeof value === "string") {
-    return sanitize(value);
+  const keyValuePairs = Object.entries<string | number>(props)
+    .filter(
+      ([k, v]) =>
+        k && k !== "way" && (typeof v === "string" || typeof v === "number")
+    )
+    .map(([k, v]) => {
+      switch (k) {
+        case "speed":
+          return [k, Math.round((v as number) * 3.6) + " km/h"];
+        case "angle":
+          return [k, v + " deg"];
+        default:
+          return [k, v];
+      }
+    });
+
+  for (const [key, value] of keyValuePairs) {
+    content += `${key}: ${value}<br>`;
   }
 
-  const numberValue = value as number;
+  document.getElementById("popup-content")!.innerHTML = content;
 
-  const searchableKey = key.toLocaleLowerCase();
-  if (searchableKey.indexOf("area") >= 0) {
-    return numberValue < 1000000
-      ? `${numberValue} m²`
-      : `${(numberValue / 1000000).toFixed(2)} km²`;
-  } else if (searchableKey.indexOf("ele") >= 0) {
-    return `${numberValue} m`;
-  }
-
-  return value.toString();
-};
-
-export const capitalize = (value: string): string => {
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  popup.setPosition(coordinate);
 };
 
 export const getFirstFeatureFromTileLayer = async (
@@ -343,7 +321,7 @@ export function appendLayer(
     | Heatmap<Feature<Geometry>>,
   parent: HTMLElement
 ) {
-  const item = document.createElement("div");
+  const titleDiv = document.createElement("div");
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = false;
@@ -359,9 +337,44 @@ export function appendLayer(
     popup.setPosition(undefined);
   });
 
-  item.appendChild(checkbox);
-  item.appendChild(document.createTextNode(layer.get("title")));
-  parent.appendChild(item);
+  titleDiv.appendChild(checkbox);
+  titleDiv.appendChild(document.createTextNode(layer.get("title")));
+  parent.appendChild(titleDiv);
 
   return layer;
 }
+
+export const getFeaturesOnMapClick =
+  (map: Map, popup: Overlay, onFail?: Function, onSuccess?: Function) =>
+  async (ev: MapBrowserEvent<UIEvent>) => {
+    const featurePromises = map
+      .getAllLayers()
+      .slice(1)
+      .filter((layer) => layer.isVisible())
+      .reverse()
+      .map((layer) => {
+        if (layer instanceof VectorLayer || layer instanceof Heatmap) {
+          return Promise.resolve(getFirstFeatureFromVectorLayer(map, ev.pixel));
+        } else if (layer instanceof TileLayer) {
+          return getFirstFeatureFromTileLayer(map, layer, ev.coordinate);
+        } else {
+          return Promise.resolve(null);
+        }
+      });
+
+    const features = (await Promise.all(featurePromises)).filter(
+      (f) => f !== null
+    );
+    const [feature] = features;
+    if (!feature) {
+      popup.setPosition(undefined);
+      await onFail?.();
+      return;
+    }
+
+    await onSuccess?.(feature);
+
+    const props = feature.getProperties() ?? feature.properties;
+
+    showPopup(ev.coordinate, props, popup);
+  };
