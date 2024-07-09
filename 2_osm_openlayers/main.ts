@@ -12,6 +12,7 @@ import {
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { WORKSPACE, PARAMETRIZED_LAYERS } from "../lib/src/constants";
+import LayerGroup from "ol/layer/Group";
 
 const legend: HTMLElement = document.getElementById("legend")!!;
 const overlay = new Overlay({
@@ -35,7 +36,7 @@ const map = new Map({
 
 const wmsLayers =
   (await fetchWMSLayers())?.filter(
-    (layer) => !layer.keywords?.includes("hide_wms")
+    (layer) => !["autobuske beograd, autobuske nis"].includes(layer.name)
   ) ?? [];
 const wfsLayers = (await fetchVectorLayers()) ?? [];
 
@@ -55,8 +56,37 @@ if (wfsLayers?.length > 0) {
   legend.appendChild(wfsHeader);
 }
 
-wfsLayers
-  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(WORKSPACE + ":", "")))
-  .forEach((l) => appendLayer(map, overlay, createVectorLayer(l), legend));
+const vectorLayers = wfsLayers
+  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(`${WORKSPACE}:`, "")))
+  .map((l) => createVectorLayer(l));
+
+const vlg = new LayerGroup({
+  layers: vectorLayers.filter((l) =>
+    [`${WORKSPACE}:autobuske beograd`, `${WORKSPACE}:autobuske nis`].includes(
+      l.get("name")
+    )
+  ),
+});
+vlg.set("name", "bus_stops_layer_group");
+vlg.set("title", "Autobuske stanice layer group");
+
+const titleDiv = document.createElement("div");
+const checkbox = document.createElement("input");
+checkbox.type = "checkbox";
+checkbox.checked = false;
+
+vlg.setVisible(false);
+map.addLayer(vlg);
+
+checkbox.addEventListener("change", () => {
+  vlg.setVisible(checkbox.checked);
+  overlay.setPosition(undefined);
+});
+
+titleDiv.appendChild(checkbox);
+titleDiv.appendChild(document.createTextNode(vlg.get("title")));
+legend.appendChild(titleDiv);
+
+vectorLayers.forEach((vl) => appendLayer(map, overlay, vl, legend));
 
 map.on("click", async (ev) => await mapOnClickEvHandler(map, overlay, ev));
