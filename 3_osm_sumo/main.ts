@@ -26,7 +26,6 @@ import {
 import { LineString } from "ol/geom";
 import VectorSource from "ol/source/Vector";
 import { FeatureLike } from "ol/Feature";
-import LayerGroup from "ol/layer/Group";
 
 const sumoLegend: HTMLElement = document.getElementById("sumo")!;
 const layersDiv: HTMLElement = document.getElementById("layers")!;
@@ -76,6 +75,10 @@ if (wfsLayers.length > 0) {
   wfsHeader.textContent = "Vektorski slojevi";
   layersDiv.appendChild(wfsHeader);
 }
+
+wfsLayers
+  .filter((l) => !PARAMETRIZED_LAYERS.has(l.name.replace(`${WORKSPACE}:`, "")))
+  .forEach((l) => appendLayer(map, overlay, createVectorLayer(l), layersDiv));
 
 const offsetFcd = "2024-07-04 09:11:12";
 const offsetEmission = "2024-07-06 15:20:39";
