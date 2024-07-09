@@ -9,7 +9,6 @@ import {
   fetchVectorLayers,
   fetchWMSLayers,
   mapOnClickEvHandler,
-  showPopup,
 } from "../lib/src/util";
 import "../lib/src/style.css";
 import { WORKSPACE, PARAMETRIZED_LAYERS } from "../lib/src/constants";

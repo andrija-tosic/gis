@@ -14,7 +14,6 @@ import {
   updateHeatmapLayer,
   updateVectorLayer,
   createWfsUrl,
-  showPopup,
   mapOnClickEvHandler,
 } from "../lib/src/util";
 import "../lib/src/style.css";
