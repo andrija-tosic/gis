@@ -122,7 +122,7 @@ const vectorLayerTrafficLightJams = appendLayer(
   createVectorLayer({
     name: "traffic_light_jams",
     params: { timestamp: timestampFcd, veh_type, cnt },
-    title: "Semafori sa kolonama vozila",
+    title: "Semafori kod kojih je gužva",
     style: createIconStyle("traffic-light"),
   }),
   sumoLegend
@@ -134,7 +134,7 @@ const vectorLayerCarsOnTrafficLightJams = appendLayer(
   createVectorLayer({
     name: "cars_on_traffic_light_jams",
     params: { timestamp: timestampFcd, veh_type },
-    title: "Kolona vozila na semaforima",
+    title: "Gužva vozila kod semafora",
     style: createIconStyle(veh_type),
   }),
   sumoLegend
